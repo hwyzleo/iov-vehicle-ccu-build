@@ -1,11 +1,22 @@
 # CGW Build Release Set Manifest
-# Built-in minimal release set for BUILD v0.1-draft self-verification (CR-001).
+# Built-in release sets for BUILD v0.1-draft self-verification.
 
 release_sets:
   cgw-dev-minimal:
-    description: "Minimal CGW release set for BUILD v0.1-draft self-verification"
+    description: "Minimal CGW release set for BUILD v0.1-draft self-verification (CR-001)"
     platform: cgw-dev
     profile: release
     services:
       - cgw-hello-lib
       - cgw-hello-cli
+
+  # CGW-BUILD-DSN-CR-002: framework 接入 + installed-package consumer 自验证。
+  # HOST 自验证通过编排器注入的等价 CMAKE_PREFIX_PATH 完成 find_package/编译/链接；
+  # TARGET 构建通过 toolchain 注入查找根。
+  cgw-dev-framework:
+    description: "CGW framework + installed-package consumer self-verification (CR-002)"
+    platform: cgw-dev
+    profile: release
+    services:
+      - framework
+      - framework-consumer

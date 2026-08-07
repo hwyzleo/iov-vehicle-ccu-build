@@ -1,0 +1,40 @@
+# yaml-cpp TARGET dependency recipe stub (CGW-BUILD-DSN-CR-002 §3)
+#
+# Records the controlled source/build metadata for yaml-cpp, the framework's
+# first TARGET dependency. Real recipe execution (source build into
+# CGW_DEP_STAGING) is a future CR; the orchestrator currently verifies
+# controlled presence (fail-closed). See README.md in this directory.
+#
+# Lock entry: manifests/dependency-lock.yaml -> dependencies.yaml-cpp
+
+name: yaml-cpp
+version: "0.8.0"
+
+# Controlled upstream source. The source SHA-256 is PENDING until the
+# controlled tarball is acquired and pinned; release builds reject PENDING.
+source:
+  url: "https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.8.0.tar.gz"
+  sha256: "PENDING-controlled-source-fingerprint-not-yet-acquired"
+
+license: MIT
+boundary: TARGET
+linkage: static
+
+# Target profile/architecture. HOST dev/test uses a prebuilt HOST-arch archive
+# (framework scripts/stage-yaml-cpp.sh); the TARGET recipe builds from the
+# pinned source for the platform architecture (e.g. aarch64).
+profiles:
+  host:
+    note: "prebuilt HOST archive staged via framework scripts/stage-yaml-cpp.sh"
+  aarch64:
+    note: "BUILD source-build recipe (future CR); cmake -DBUILD_SHARED_LIBS=OFF"
+
+# Build options for the TARGET source recipe (future CR).
+cmake:
+  options:
+    BUILD_SHARED_LIBS: "OFF"
+    YAML_CPP_BUILD_TESTS: "OFF"
+    YAML_CPP_BUILD_TOOLS: "OFF"
+    YAML_CPP_BUILD_CONTRIB: "OFF"
+
+patches: []

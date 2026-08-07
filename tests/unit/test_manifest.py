@@ -79,9 +79,11 @@ class TestServiceManifest:
     def test_load_service_manifest(self, project_root: Path):
         project = Project(project_root, platform="cgw-dev")
         manifest = project.load_service_manifest()
-        assert len(manifest) == 2
+        assert len(manifest) == 4
         assert "cgw-hello-lib" in manifest
         assert "cgw-hello-cli" in manifest
+        assert "framework" in manifest
+        assert "framework-consumer" in manifest
 
     def test_service_properties(self, project_root: Path):
         project = Project(project_root, platform="cgw-dev")
@@ -106,15 +108,66 @@ class TestServiceManifest:
     def test_release_set_manifest(self, project_root: Path):
         project = Project(project_root, platform="cgw-dev")
         rs = project.load_release_set_manifest()
-        assert len(rs) == 1
+        assert len(rs) == 2
         minimal = rs.get("cgw-dev-minimal")
         assert minimal is not None
         assert minimal.services == ["cgw-hello-lib", "cgw-hello-cli"]
+        framework = rs.get("cgw-dev-framework")
+        assert framework is not None
+        assert framework.services == ["framework", "framework-consumer"]
 
-    def test_dependency_lock_empty(self, project_root: Path):
+    def test_dependency_lock_yaml_cpp(self, project_root: Path):
+        """CGW-BUILD-DSN-CR-002: yaml-cpp is the framework's controlled TARGET dep."""
         project = Project(project_root, platform="cgw-dev")
         lock = project.load_dependency_lock()
-        assert len(lock) == 0
+        assert len(lock) == 1
+        assert "yaml-cpp" in lock
+        dep = lock.get("yaml-cpp")
+        assert dep is not None
+        assert dep.boundary == "TARGET"
+        assert dep.linkage == "static"
+        assert dep.license == "MIT"
+        # Source digest is PENDING (draft); release builds must reject it.
+        assert dep.is_source_pinned is False
+        assert dep.is_static is True
+
+    def test_framework_service_metadata(self, project_root: Path):
+        """CGW-BUILD-DSN-CR-002 §1: framework library with five targets."""
+        project = Project(project_root, platform="cgw-dev")
+        manifest = project.load_service_manifest()
+        fw = manifest.get("framework")
+        assert fw is not None
+        assert fw.kind == "library"
+        assert fw.is_library is True
+        assert fw.build.targets == [
+            "cgw-framework-config",
+            "cgw-framework-log",
+            "cgw-framework-store",
+            "cgw-framework-hash",
+            "cgw-framework-someip",
+        ]
+        assert fw.build.service_dependencies == []
+        assert fw.build.target_dependencies == ["yaml-cpp"]
+        assert fw.runtime.systemd_units == []
+        assert len(fw.build.install_components) == 2
+        sdk = fw.build.install_components[0]
+        assert sdk.name == "cgw-framework-sdk"
+        assert sdk.staging == "sdk"
+        rt = fw.build.install_components[1]
+        assert rt.name == "cgw-framework-runtime"
+        assert rt.staging == "rootfs"
+
+    def test_framework_consumer_service(self, project_root: Path):
+        """CGW-BUILD-DSN-CR-002 §5: consumer depends on framework + yaml-cpp."""
+        project = Project(project_root, platform="cgw-dev")
+        manifest = project.load_service_manifest()
+        consumer = manifest.get("framework-consumer")
+        assert consumer is not None
+        assert consumer.kind == "daemon"
+        assert consumer.build.service_dependencies == ["framework"]
+        assert consumer.build.target_dependencies == ["yaml-cpp"]
+        assert consumer.build.targets == ["cgw-framework-consumer"]
+        assert consumer.runtime.systemd_units == ["cgw-framework-consumer.service"]
 
 
 class TestLegacyDependencyResolution:

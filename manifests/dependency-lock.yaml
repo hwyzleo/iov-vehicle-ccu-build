@@ -2,9 +2,25 @@
 # Records versions, sources, licenses, architecture, linkage and checksums
 # for TARGET dependencies built by the recipe executor into CGW_DEP_STAGING.
 #
-# CR-001: 空依赖锁定骨架。TARGET 依赖待 CGW 实机基线确认后填入。
+# CR-001: 空依赖锁定骨架。
+# CR-002: 登记 framework 首个受控 TARGET 依赖 yaml-cpp。
+#
 # Source SHA-256 values marked PENDING must be filled after obtaining the
 # controlled source; the recipe executor rejects PENDING entries for release
-# builds.
+# builds (DependencyEntry.is_source_pinned == False).
+#
+# HOST dev/test 自验证：yaml-cpp 由 framework 仓库的 scripts/stage-yaml-cpp.sh
+# 将受控预编译 archive 暂存到 CGW_DEP_STAGING（HOST 架构，仅用于开发/测试，
+# 不得用于 aarch64-linux 目标链接）。TARGET 正式构建由 BUILD 受控源码 recipe
+# 提供匹配架构的 yaml-cpp package（后续 CR 实现真实 recipe 执行）。
 
-dependencies: {}
+dependencies:
+  yaml-cpp:
+    version: "0.8.0"
+    source:
+      url: "https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.8.0.tar.gz"
+      sha256: "PENDING-controlled-source-fingerprint-not-yet-acquired"
+    license: MIT
+    boundary: TARGET
+    architecture: aarch64
+    linkage: static

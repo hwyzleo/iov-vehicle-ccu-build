@@ -3,6 +3,11 @@
 # (CR-001 实施阶段 1：仅在 cgw-build 中完成 schema、内置示例、staging、
 # manifest 与包自验证，不依赖修改真实服务)。
 #
+# CGW-BUILD-DSN-CR-002：接入真实 CGW framework（../iov-vehicle-cgw-framework）
+# 作为首个公共 library 依赖，并以内置 framework-consumer 自验证下游
+# installed-package 消费契约。framework 的精确 component/package 名由
+# CGW-FW install/export CR（CGW-FW-DSN-CR-006）固化。
+#
 # 依赖字段使用显式 service_dependencies / target_dependencies 分离；
 # install_components 使用 {name, staging} 形式。
 
@@ -47,5 +52,65 @@ services:
         - /etc/cgw/hello
       persistent_paths:
         - /var/lib/cgw/hello
+      required_devices: []
+      capabilities: []
+
+  # CGW-BUILD-DSN-CR-002 §1: framework 作为首个真实公共 library 依赖接入。
+  # 五个独立 target、sdk/rootfs install components、无 systemd unit（library）。
+  # target_dependencies 指向 dependency-lock 中的 yaml-cpp（受控 TARGET 依赖），
+  # 在 framework configure 前由 BUILD 校验已 staging 到 CGW_DEP_STAGING。
+  framework:
+    description: "CGW framework five-component public SDK library (CGW-BUILD-DSN-CR-002)"
+    source_dir: ../iov-vehicle-cgw-framework
+    revision: a2559e068cbc4f74c677ff16c9e55be5dd4679a2
+    kind: library
+    build:
+      targets:
+        - cgw-framework-config
+        - cgw-framework-log
+        - cgw-framework-store
+        - cgw-framework-hash
+        - cgw-framework-someip
+      service_dependencies: []
+      target_dependencies:
+        - yaml-cpp
+      preset: cgw-dev-release
+      install_components:
+        - name: cgw-framework-sdk
+          staging: sdk
+        - name: cgw-framework-runtime
+          staging: rootfs
+    runtime:
+      config_paths: []
+      persistent_paths: []
+
+  # CGW-BUILD-DSN-CR-002 §5: 内置 installed-package consumer 自验证下游消费契约。
+  # 仅通过 find_package(CGWFramework) + 导出 targets 消费 framework，不引用
+  # framework 源码/build tree。复用 framework 的 TARGET 依赖 yaml-cpp。
+  framework-consumer:
+    description: "CGW framework installed-package consumer self-verification (CGW-BUILD-DSN-CR-002)"
+    repository: examples/framework-consumer
+    kind: daemon
+    build:
+      targets:
+        - cgw-framework-consumer
+      service_dependencies:
+        - framework
+      target_dependencies:
+        - yaml-cpp
+      preset: cgw-dev-release
+      install_components:
+        - name: cgw-framework-consumer-runtime
+          staging: rootfs
+    runtime:
+      systemd_units:
+        - cgw-framework-consumer.service
+      after: []
+      health_check: tests/smoke/framework-consumer-health.sh
+      smoke_test: tests/smoke/framework-consumer-ipc.sh
+      config_paths:
+        - /etc/cgw/framework-consumer
+      persistent_paths:
+        - /var/lib/cgw/framework-consumer
       required_devices: []
       capabilities: []

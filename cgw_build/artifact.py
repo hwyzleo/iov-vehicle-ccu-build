@@ -64,6 +64,9 @@ class ArtifactManifest:
         self.sysroot_manifest = sysroot_manifest
         self.dependency_lock = dependency_lock
         self.entries: list[ArtifactEntry] = []
+        # Consumer evidence (设计 §8.6): SDK-providing service id -> sorted list
+        # of downstream service ids that consume it via service_dependencies.
+        self.sdk_consumers: dict[str, list[str]] = {}
         self.generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def add_entry(self, entry: ArtifactEntry) -> None:
@@ -168,6 +171,7 @@ class ArtifactManifest:
                 "import_status": self.sysroot_manifest.import_status,
             },
             "dependency_lock": self._dependency_lock_summary(),
+            "sdk_consumers": self.sdk_consumers,
             "artifact_count": len(self.entries),
             "artifacts": [asdict(e) for e in self.entries],
         }

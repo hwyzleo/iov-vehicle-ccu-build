@@ -1,0 +1,14 @@
+[Unit]
+Description=CGW Framework Consumer (BUILD CR-002 installed-package self-verification)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cgw-framework-consumer
+Restart=on-failure
+RestartSec=3
+User=cgw
+Group=cgw
+
+[Install]
+WantedBy=multi-user.target

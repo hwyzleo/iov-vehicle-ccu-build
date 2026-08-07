@@ -224,6 +224,31 @@ class BuildOrchestrator:
             cmd.append(f"-DCMAKE_TOOLCHAIN_FILE={toolchain}")
             sysroot = self.project.sysroot_path
             cmd.append(f"-DCGW_SYSROOT={sysroot}")
+        else:
+            # HOST self-verification (设计 §4/§8.4, CGW-BUILD-DSN-CR-002): no
+            # TARGET toolchain is loaded. Inject an equivalent find-root set so
+            # the build resolves installed packages from BUILD-managed staging
+            # only -- SDK staging -> TARGET dependency staging -- with
+            # PROGRAM=NEVER and LIBRARY/INCLUDE/PACKAGE=ONLY, so the build does
+            # not fall back to host /usr/local, personal dirs or undeclared
+            # packages.
+            prefix_paths: list[str] = []
+            root_paths: list[str] = []
+            for dep_id in service.build.service_dependencies:
+                sdk = self.staging.sdk_dir(dep_id)
+                prefix_paths.append(str(sdk / "usr"))
+                root_paths.append(str(sdk))
+            if service.build.target_dependencies:
+                dep = self.staging.dep_staging
+                prefix_paths.append(str(dep / "usr"))
+                root_paths.append(str(dep))
+            if prefix_paths:
+                cmd.append(f"-DCMAKE_PREFIX_PATH={';'.join(prefix_paths)}")
+                cmd.append(f"-DCMAKE_FIND_ROOT_PATH={';'.join(root_paths)}")
+                cmd.append("-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER")
+                cmd.append("-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY")
+                cmd.append("-DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY")
+                cmd.append("-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY")
 
         for key, value in service.build.cmake_cache_variables.items():
             cmd.append(f"-D{key}={value}")
@@ -258,9 +283,12 @@ class BuildOrchestrator:
         env: dict[str, str] = {
             "CGW_ROOT": str(self.project.root),
         }
+        # CGW_DEP_STAGING is always set: the TARGET toolchain consumes it, and
+        # HOST build logs record it (HOST find-root injection happens via
+        # CMAKE_PREFIX_PATH in _configure_cmd, 设计 §4/§8.4).
+        env["CGW_DEP_STAGING"] = str(self.staging.dep_staging)
         if self.config.is_target:
             env["CGW_SYSROOT"] = str(self.project.sysroot_path)
-            env["CGW_DEP_STAGING"] = str(self.staging.dep_staging)
             env["PKG_CONFIG_SYSROOT_DIR"] = str(self.staging.dep_staging)
             # Platform manifest architecture for toolchain CMAKE_SYSTEM_PROCESSOR
             try:
@@ -561,15 +589,34 @@ class BuildOrchestrator:
     def _prepare_target_dependencies(
         self, graph: DependencyGraph, service_ids: list[str]
     ) -> list[str]:
-        """Prepare TARGET dependencies (recipes) before services configure."""
+        """Prepare TARGET dependencies (recipes) before services configure.
+
+        Real recipe execution (building locked deps from source into
+        CGW_DEP_STAGING) is a future CR; for now BUILD verifies controlled
+        presence and lets each project's ``find_package`` fail-closed on a
+        missing package (CR-002 option (a), 设计 §3/§8.3).
+        """
         target_deps = graph.target_dependency_order(service_ids)
         if not target_deps:
             return []
         if self.config.dry_run or self.config.skip_recipes:
             print(f"=== TARGET dependencies: {target_deps} (dry-run/skip) ===")
             return target_deps
-        # Real recipe execution would go here (future CR when deps are locked).
-        print(f"=== TARGET dependencies: {target_deps} ===")
+
+        # Fail-closed: declared TARGET dependencies must already be staged in
+        # CGW_DEP_STAGING before any service configure. HOST dev/test stages
+        # them via the framework's scripts/stage-yaml-cpp.sh; TARGET builds use
+        # a BUILD controlled recipe (future CR).
+        dep_usr = self.staging.dep_staging / "usr"
+        staged = dep_usr.is_dir() and any(p.is_file() for p in dep_usr.rglob("*"))
+        if not staged:
+            raise BuildFailure(
+                f"TARGET dependencies {target_deps} declared but CGW_DEP_STAGING "
+                f"is empty ({dep_usr}). Stage controlled dependencies (e.g. "
+                f"yaml-cpp via the framework's scripts/stage-yaml-cpp.sh for "
+                f"HOST, or a BUILD recipe for TARGET) before building."
+            )
+        print(f"=== TARGET dependencies: {target_deps} (staged at {dep_usr}) ===")
         return target_deps
 
     def _generate_artifact_manifest(
@@ -590,6 +637,14 @@ class BuildOrchestrator:
             sysroot_manifest=sysroot_manifest,
             dependency_lock=lock,
         )
+
+        # Consumer evidence (设计 §8.6): map each SDK-providing service to the
+        # downstream services that consume it via service_dependencies.
+        sdk_consumers: dict[str, list[str]] = {}
+        for svc in service_manifest:
+            for dep in svc.build.service_dependencies:
+                sdk_consumers.setdefault(dep, []).append(svc.id)
+        manifest.sdk_consumers = {k: sorted(v) for k, v in sdk_consumers.items()}
 
         # Build a map of logical rel path -> (service_id, target, version, component, staging)
         file_owners: dict[str, tuple[str, str, str, str, str]] = {}

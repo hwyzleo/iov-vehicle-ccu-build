@@ -146,6 +146,15 @@ class TestArtifactManifest:
         assert d["sysroot"]["id"] == "cgw-dev-sysroot"
         assert d["sysroot"]["import_status"] == "pending"
 
+    def test_sdk_consumers_evidence(self):
+        """CGW-BUILD-DSN-CR-002 §8.6: consumer evidence in artifact manifest."""
+        manifest = _make_manifest()
+        manifest.sdk_consumers = {"framework": ["framework-consumer"]}
+        d = manifest.to_dict()
+        assert d["sdk_consumers"] == {"framework": ["framework-consumer"]}
+        # Empty by default
+        assert _make_manifest().to_dict()["sdk_consumers"] == {}
+
 
 class TestGitCommit:
     def test_get_git_commit(self, project_root: Path):

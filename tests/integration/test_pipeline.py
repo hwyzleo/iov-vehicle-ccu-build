@@ -57,16 +57,22 @@ class TestEndToEndValidation:
         validate_all(service_manifest, project_root)
 
         # 7. Dependency graph
-        graph = DependencyGraph(service_manifest)
+        lock = project.load_dependency_lock()
+        graph = DependencyGraph(service_manifest, lock)
         order = graph.build_order()
-        assert len(order) == 2
+        assert len(order) == 4
         assert order.index("cgw-hello-lib") < order.index("cgw-hello-cli")
+        assert order.index("framework") < order.index("framework-consumer")
 
         # 8. Release set closure
         rs = release_set_manifest.get("cgw-dev-minimal")
         assert rs is not None
         closure = graph.closure(rs.services)
         assert closure == {"cgw-hello-lib", "cgw-hello-cli"}
+        fw_rs = release_set_manifest.get("cgw-dev-framework")
+        assert fw_rs is not None
+        assert graph.closure(fw_rs.services) == {"framework", "framework-consumer"}
+        assert graph.target_dependency_order(fw_rs.services) == ["yaml-cpp"]
 
     def test_platform_manifest_has_tbd_items(self, project_root: Path):
         """Platform manifest must have TBD items with closing gates (设计 §3)."""
@@ -163,6 +169,22 @@ class TestDryRunBuild:
 
         assert report.status == "success"
         assert report.platform == "host"
+
+    def test_dry_run_framework_set(self, project_root: Path):
+        """CGW-BUILD-DSN-CR-002: dry-run build of the framework release set."""
+        project = Project(project_root, platform="cgw-dev")
+        config = BuildConfig(platform="cgw-dev", profile="release", dry_run=True)
+        orch = BuildOrchestrator(project, config)
+        report = orch.build(set_id="cgw-dev-framework")
+
+        assert report.status == "success"
+        ids = [r.id for r in report.service_results]
+        assert ids == ["framework", "framework-consumer"]
+        # yaml-cpp TARGET dependency is collected (dry-run skips staging check)
+        assert report.target_dependencies == ["yaml-cpp"]
+        # framework install components recorded (sdk + runtime)
+        fw = report.service_results[0]
+        assert {c.name for c in fw.components} == {"cgw-framework-sdk", "cgw-framework-runtime"}
 
 
 class TestDryRunPackage:

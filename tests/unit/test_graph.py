@@ -65,8 +65,22 @@ class TestTopologicalSort:
         lock = project.load_dependency_lock()
         graph = DependencyGraph(manifest, lock)
         order = graph.build_order()
-        assert len(order) == 2
+        assert len(order) == 4
         assert order.index("cgw-hello-lib") < order.index("cgw-hello-cli")
+        assert order.index("framework") < order.index("framework-consumer")
+
+    def test_framework_release_set_order(self, project_root: Path):
+        """CGW-BUILD-DSN-CR-002: framework builds before its consumer."""
+        from cgw_build.manifest import Project
+        project = Project(project_root, platform="cgw-dev")
+        manifest = project.load_service_manifest()
+        lock = project.load_dependency_lock()
+        graph = DependencyGraph(manifest, lock)
+        order = graph.build_order(["framework-consumer"])
+        assert order == ["framework", "framework-consumer"]
+        # yaml-cpp is the framework's TARGET dependency (staged before configure)
+        target_deps = graph.target_dependency_order(["framework-consumer"])
+        assert target_deps == ["yaml-cpp"]
 
 
 class TestCycleDetection:
