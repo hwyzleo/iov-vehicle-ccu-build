@@ -1,0 +1,11 @@
+# CGW Build Release Set Manifest
+# Built-in minimal release set for BUILD v0.1-draft self-verification (CR-001).
+
+release_sets:
+  cgw-dev-minimal:
+    description: "Minimal CGW release set for BUILD v0.1-draft self-verification"
+    platform: cgw-dev
+    profile: release
+    services:
+      - cgw-hello-lib
+      - cgw-hello-cli

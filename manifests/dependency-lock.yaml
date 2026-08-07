@@ -1,0 +1,10 @@
+# CGW Build Dependency Lock File
+# Records versions, sources, licenses, architecture, linkage and checksums
+# for TARGET dependencies built by the recipe executor into CGW_DEP_STAGING.
+#
+# CR-001: 空依赖锁定骨架。TARGET 依赖待 CGW 实机基线确认后填入。
+# Source SHA-256 values marked PENDING must be filled after obtaining the
+# controlled source; the recipe executor rejects PENDING entries for release
+# builds.
+
+dependencies: {}

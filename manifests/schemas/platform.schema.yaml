@@ -1,0 +1,98 @@
+# JSON Schema (Draft-07) for CGW Build Platform Manifest
+# Validates manifests/platforms/<platform>.yaml
+#
+# CR: CGW-BUILD-DSN-CR-001 §3 Platform Manifest
+#
+# 要求：TBD 项必须记录 owner 和 close_gate（关闭门槛）。
+# 清单、toolchain、sysroot 与依赖锁定统一版本化。
+$schema: "http://json-schema.org/draft-07/schema#"
+title: CGW Build Platform Manifest
+type: object
+required:
+  - platform
+  - version
+  - architecture
+  - toolchain
+  - sysroot
+properties:
+  platform:
+    type: string
+    minLength: 1
+  version:
+    type: string
+    minLength: 1
+  manifest_digest:
+    type: string
+  hardware:
+    type: object
+  architecture:
+    type: string
+  target_triple:
+    type: string
+  os:
+    type: object
+  bsp:
+    type: object
+  toolchain:
+    type: object
+    required:
+      - sysroot
+    properties:
+      execution_architecture:
+        type: string
+      target_triple:
+        type: string
+      cross_cc:
+        type: string
+      cross_cxx:
+        type: string
+      version:
+        type: string
+      sysroot:
+        type: string
+        minLength: 1
+      exact_package_revision:
+        type: string
+  sysroot:
+    type: object
+    required:
+      - id
+    properties:
+      id:
+        type: string
+        minLength: 1
+      source:
+        type: string
+      digest:
+        type: string
+      repository_path:
+        type: string
+  abi:
+    type: object
+  build_environment:
+    type: object
+  runtime:
+    type: object
+  packaging:
+    type: object
+  deploy:
+    type: object
+  tbd_items:
+    type: array
+    items:
+      type: object
+      required:
+        - field
+        - owner
+        - close_gate
+      properties:
+        field:
+          type: string
+        owner:
+          type: string
+        close_gate:
+          type: string
+  prerequisites_to_close:
+    type: array
+    items:
+      type: string

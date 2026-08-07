@@ -1,0 +1,181 @@
+# CGW Build Platform Manifest - <platform> (平台参数化骨架)
+#
+# CR: CGW-BUILD-DSN-CR-001
+#
+# 本清单采用平台参数化设计。<platform>、架构、OS/BSP、toolchain、sysroot
+# 和部署通道由 CGW 实机基线确认后固化，不沿用 TBOX Orin 常量。
+#
+# 所有未确认项标记 TBD，并记录责任方 (owner) 和关闭门槛 (close_gate)。
+# 在首个可发布构建前必须全部关闭（见设计 §10 前置决策）。
+
+platform: cgw-dev
+
+# --- 版本与摘要（统一版本化） ---
+version: "0.1.0-draft"
+manifest_digest: TBD  # 清单自身 SHA-256，发布前计算
+
+# --- 硬件 / SKU ---
+hardware:
+  model: TBD
+  sku: TBD
+  soc: TBD
+  cpu:
+    architecture: TBD
+    cores: TBD
+    model: TBD
+  memory:
+    type: TBD
+    capacity: TBD
+  storage:
+    type: TBD
+    capacity: TBD
+  tbd_items:
+    - field: hardware.model
+      owner: CGW 硬件团队
+      close_gate: CGW 实机基线确认后填入具体型号
+    - field: hardware.sku
+      owner: CGW 硬件团队
+      close_gate: CGW 实机基线确认后填入具体 SKU
+    - field: hardware.cpu.architecture
+      owner: CGW 硬件团队
+      close_gate: 实机 CPU 架构确认（aarch64/x86_64 等）
+
+# --- 架构 / target triple ---
+architecture: TBD
+target_triple: TBD
+
+# --- OS / BSP / kernel / glibc / systemd ---
+os:
+  name: TBD
+  version: TBD
+  kernel: TBD
+  glibc: TBD
+  systemd: TBD
+  filesystem: TBD
+  tbd_items:
+    - field: os.name
+      owner: CGW BSP 团队
+      close_gate: 目标 OS 确认（Ubuntu/Buildroot/Yocto 等）
+    - field: os.kernel
+      owner: CGW BSP 团队
+      close_gate: 内核版本确认
+
+bsp:
+  vendor: TBD
+  product: TBD
+  version: TBD
+  tbd_items:
+    - field: bsp.vendor
+      owner: CGW BSP 团队
+      close_gate: BSP 供应商确认
+
+# --- Toolchain ---
+toolchain:
+  execution_architecture: TBD  # linux/arm64, linux/amd64 等
+  target_triple: TBD
+  cross_cc: TBD
+  cross_cxx: TBD
+  version: TBD
+  sysroot: cgw-dev-sysroot  # 引用 sysroot 清单 id
+  exact_package_revision: TBD
+  tbd_items:
+    - field: toolchain.cross_cc
+      owner: CGW 构建团队
+      close_gate: 交叉编译器确认（gcc-aarch64-linux-gnu 等）
+    - field: toolchain.cross_cxx
+      owner: CGW 构建团队
+      close_gate: 交叉编译器确认
+
+# --- Sysroot ---
+sysroot:
+  id: cgw-dev-sysroot
+  source: TBD
+  digest: TBD
+  repository_path: sysroots/cgw-dev-sysroot
+  tbd_items:
+    - field: sysroot.source
+      owner: CGW 构建团队
+      close_gate: 受控 sysroot 来源确认（SDK/rootfs 快照）
+    - field: sysroot.digest
+      owner: CGW 构建团队
+      close_gate: sysroot 导入后计算结构摘要
+
+# --- ABI / C/C++ 标准 ---
+abi:
+  glibc: TBD
+  long_bit: 64
+  c_standard: c11
+  cxx_standard: c++17
+  libstdcxx_cxx11_abi: TBD
+  tbd_items:
+    - field: abi.glibc
+      owner: CGW BSP 团队
+      close_gate: 目标 glibc 版本确认
+    - field: abi.libstdcxx_cxx11_abi
+      owner: CGW 构建团队
+      close_gate: 编译器 ABI 确认后填入
+
+# --- 构建容器 / runner ---
+build_environment:
+  container_os: TBD
+  container_architecture: TBD
+  image: TBD
+  image_manifest_digest: TBD
+  ci_runner: TBD
+  host_tools:
+    cmake: "3.16+"
+    ninja: "1.10+"
+    python: "3.8+"
+  tbd_items:
+    - field: build_environment.container_os
+      owner: CGW 构建团队
+      close_gate: 构建容器 OS 确认
+    - field: build_environment.image
+      owner: CGW 构建团队
+      close_gate: 构建容器镜像确认并记录摘要
+
+# --- 运行时：用户/组/capability/设备节点 ---
+runtime:
+  user: cgw
+  group: cgw
+  capabilities: []
+  device_nodes: []
+  persistent_state: /var/lib/cgw
+  tbd_items:
+    - field: runtime.capabilities
+      owner: CGW 各服务团队
+      close_gate: 各服务 capability 需求确认
+
+# --- 包格式 / 部署通道 / 目标机验证 ---
+packaging:
+  format: tar.gz  # 初版：携带 manifest 的可解压包
+  deploy_channel: TBD
+  tbd_items:
+    - field: packaging.deploy_channel
+      owner: CGW 部署团队
+      close_gate: 部署通道确认（SSH/OTA/USB 等）
+
+deploy:
+  target_verify_capability: TBD
+  tbd_items:
+    - field: deploy.target_verify_capability
+      owner: CGW 验证团队
+      close_gate: 目标机验证资源确认
+
+# --- 前置决策关闭门槛总览（设计 §10）---
+# 首个可发布构建前必须关闭以下全部 TBD：
+prerequisites_to_close:
+  - 目标硬件/SKU
+  - OS/BSP
+  - 架构与 ABI
+  - compiler
+  - C/C++ 标准
+  - sysroot 来源和摘要
+  - 构建容器/runner
+  - TARGET 依赖供给
+  - 安装目录
+  - systemd/权限/capability/设备节点
+  - 包格式
+  - 部署通道
+  - 配置/秘密边界
+  - 目标机测试资源

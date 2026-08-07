@@ -1,0 +1,51 @@
+# CGW Build Service Manifest
+# Built-in minimal example services for BUILD v0.1-draft self-verification
+# (CR-001 实施阶段 1：仅在 cgw-build 中完成 schema、内置示例、staging、
+# manifest 与包自验证，不依赖修改真实服务)。
+#
+# 依赖字段使用显式 service_dependencies / target_dependencies 分离；
+# install_components 使用 {name, staging} 形式。
+
+services:
+  cgw-hello-lib:
+    description: "Minimal C++ shared library for CGW BUILD v0.1-draft self-verification"
+    repository: examples/minimal
+    kind: library
+    build:
+      targets:
+        - cgw-hello-lib
+      service_dependencies: []
+      target_dependencies: []
+      preset: cgw-dev-release
+      install_components:
+        - name: cgw-hello-lib-runtime
+          staging: rootfs
+    runtime:
+      config_paths: []
+      persistent_paths: []
+
+  cgw-hello-cli:
+    description: "Minimal C++ executable consuming cgw-hello-lib"
+    repository: examples/minimal
+    build:
+      targets:
+        - cgw-hello-cli
+      service_dependencies:
+        - cgw-hello-lib
+      target_dependencies: []
+      preset: cgw-dev-release
+      install_components:
+        - name: cgw-hello-cli-runtime
+          staging: rootfs
+    runtime:
+      systemd_units:
+        - cgw-hello.service
+      after: []
+      health_check: tests/smoke/hello-health.sh
+      smoke_test: tests/smoke/hello-ipc.sh
+      config_paths:
+        - /etc/cgw/hello
+      persistent_paths:
+        - /var/lib/cgw/hello
+      required_devices: []
+      capabilities: []

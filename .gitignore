@@ -67,3 +67,18 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# CGW Build output
+out/
+sysroots/
+dependencies/cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+.idea/
+
+graphify-out/

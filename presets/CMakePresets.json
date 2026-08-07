@@ -1,0 +1,71 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 16,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "host-debug",
+            "displayName": "Host Debug (native)",
+            "description": "Native host build for development and unit testing",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build/host-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "host-release",
+            "displayName": "Host Release (native)",
+            "description": "Native host build for release verification",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build/host-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "cgw-dev-debug",
+            "displayName": "CGW-Dev Debug (target)",
+            "description": "Cross-compile debug build for CGW target using cgw-target toolchain",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/cgw-dev-debug",
+            "toolchainFile": "$env{CGW_ROOT}/cmake/toolchains/cgw-target.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_INSTALL_PREFIX": "/usr",
+                "CGW_SYSROOT": "$env{CGW_ROOT}/sysroots/cgw-dev-sysroot",
+                "CGW_ROOT": "$env{CGW_ROOT}"
+            },
+            "environment": {
+                "CGW_SYSROOT": "$env{CGW_ROOT}/sysroots/cgw-dev-sysroot"
+            }
+        },
+        {
+            "name": "cgw-dev-release",
+            "displayName": "CGW-Dev Release (target)",
+            "description": "Cross-compile release build for CGW target using cgw-target toolchain",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/cgw-dev-release",
+            "toolchainFile": "$env{CGW_ROOT}/cmake/toolchains/cgw-target.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_INSTALL_PREFIX": "/usr",
+                "CGW_SYSROOT": "$env{CGW_ROOT}/sysroots/cgw-dev-sysroot",
+                "CGW_ROOT": "$env{CGW_ROOT}"
+            },
+            "environment": {
+                "CGW_SYSROOT": "$env{CGW_ROOT}/sysroots/cgw-dev-sysroot"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "host-debug",      "configurePreset": "host-debug" },
+        { "name": "host-release",    "configurePreset": "host-release" },
+        { "name": "cgw-dev-debug",   "configurePreset": "cgw-dev-debug" },
+        { "name": "cgw-dev-release", "configurePreset": "cgw-dev-release" }
+    ]
+}
