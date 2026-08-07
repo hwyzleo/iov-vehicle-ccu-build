@@ -152,6 +152,16 @@ properties:
                 type: array
                 items:
                   type: string
+              config_validation:
+                type: object
+                additionalProperties: false
+                properties:
+                  schema:
+                    type: string
+                  target_path:
+                    type: string
+                  default_source:
+                    type: string
               persistent_paths:
                 type: array
                 items:

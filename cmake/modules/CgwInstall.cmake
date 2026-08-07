@@ -80,3 +80,20 @@ function(cgw_install_config _config_file)
         COMPONENT ${_CGW_CFG_COMPONENT}
     )
 endfunction()
+
+# cgw_install_default_config(<service-id> <default-yaml> [COMPONENT <comp>])
+#   Precisely install a service default config template, renamed to
+#   /etc/cgw/conf.d/<service-id>.yaml (设计 §9.2). Wildcard install of the
+#   entire config/ directory is forbidden; config/dev/** is never installed.
+function(cgw_install_default_config _service_id _default_file)
+    set(_one_value COMPONENT)
+    cmake_parse_arguments(_CGW_DCFG "" "${_one_value}" "" ${ARGN})
+    if(NOT _CGW_DCFG_COMPONENT)
+        set(_CGW_DCFG_COMPONENT "${PROJECT_NAME}-runtime")
+    endif()
+    install(FILES ${_default_file}
+        DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/cgw/conf.d
+        RENAME ${_service_id}.yaml
+        COMPONENT ${_CGW_DCFG_COMPONENT}
+    )
+endfunction()

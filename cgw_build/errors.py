@@ -61,3 +61,35 @@ class BuildFailure(CgwBuildError):
 
 class PackageError(CgwBuildError):
     """Packaging error."""
+
+
+class ConfigError(CgwBuildError):
+    """Configuration release error (overlay, validation, ownership)."""
+
+    def __init__(self, message: str, details: list | None = None):
+        super().__init__(message)
+        self.details = details or []
+
+
+class OverlayError(CgwBuildError):
+    """Platform config overlay error (unauthorized path, stale file)."""
+
+    def __init__(self, message: str, details: list | None = None):
+        super().__init__(message)
+        self.details = details or []
+
+
+class SecretScanError(CgwBuildError):
+    """Secret material detected in build output."""
+
+    def __init__(self, message: str, findings: list | None = None):
+        super().__init__(message)
+        self.findings = findings or []
+
+
+class ConfigValidationError(CgwBuildError):
+    """Configuration schema/checker validation failure."""
+
+    def __init__(self, message: str, errors: list | None = None):
+        super().__init__(message)
+        self.errors = errors or []

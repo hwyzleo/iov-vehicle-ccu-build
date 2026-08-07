@@ -1,0 +1,4 @@
+# Development common fixture (设计 §9.2).
+# NOT installed; local dev only. The formal /etc/cgw/common.yaml is provided
+# solely by the BUILD platform config (REQ-004).
+log_level: debug

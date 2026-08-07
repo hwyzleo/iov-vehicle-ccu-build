@@ -71,6 +71,6 @@ cgw_install_target(cgw-hello-cli
 cgw_install_systemd_unit(systemd/cgw-hello.service
     COMPONENT cgw-hello-cli-runtime
 )
-cgw_install_config(config/hello.conf
+cgw_install_default_config(cgw-hello-cli config/cgw-hello-cli.default.yaml
     COMPONENT cgw-hello-cli-runtime
 )

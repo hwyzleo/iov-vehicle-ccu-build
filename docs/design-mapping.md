@@ -146,3 +146,71 @@ SRC → ORCH → FW → SVC → STAGE → PKG → DEV → TEST
 | `tests/unit/test_manifest_artifact.py` | sdk_consumers consumer 证据 |
 | `tests/integration/test_pipeline.py` | 全量校验含 framework 集合 |
 | `tests/integration/test_framework_build.py` | 真实 HOST 构建 framework+consumer、SDK/runtime 分组件、find_package 链接、manifest 证据 |
+
+## CGW-BUILD-DSN-CR-003 设计映射
+
+### 设计 §9.1 配置发布模型
+
+- 职责边界：服务拥有开发夹具/默认模板/schema/checker；BUILD 拥有平台非秘密发布值/overlay/策略/校验/打包/回退；provisioning 拥有设备身份与秘密；CGW-FW 拥有运行时六阶段加载。
+- 平台配置源：`configs/<platform>/rootfs/`（`Project.platform_configs_root()`）
+
+### 设计 §9.2 目录设计
+
+- 服务仓库结构：`examples/*/config/{<svc>.default.yaml, schema/<svc>.schema.yaml, dev/{common.yaml,<svc>.yaml}}`
+- BUILD 仓库结构：`configs/cgw-dev/rootfs/etc/cgw/{common.yaml, conf.d/<svc>.yaml}`
+- CMake 精确安装：`cmake/modules/CgwInstall.cmake` -> `cgw_install_default_config(<svc> <default.yaml>)`（重命名为 `/etc/cgw/conf.d/<svc>.yaml`，禁止通配安装）
+
+### 设计 §9.3 Platform Overlay 算法
+
+- Overlay 引擎：`cgw_build/config.py` -> `ConfigOverlay`
+  - 7 步算法：路径规范化、清理上次状态防 stale、相对路径映射、授权覆盖+前后来源记录、原子写+权限归一化、校验、报告
+  - 路径安全：`normalize_source_path`（拒绝绝对/.. /symlink 逃逸/设备文件/非普通文件）
+  - 原子写：`atomic_write`（临时文件+`os.replace`+权限归一化）
+  - clean/incremental 一致性：状态文件 `config-overlay-state.json`，stale build-owned 文件清理
+ - 报告：`OverlayReport`（overlaid/removed/skipped，保存至 `manifests/config-overlay-report.json`）
+
+### 设计 §9.4 部署策略清单
+
+- 清单：`manifests/config-deployment.yaml`（version 1，per-platform files）
+- Schema：`manifests/schemas/config-deployment.schema.yaml`
+- 数据模型：`cgw_build/manifest.py` -> `ConfigDeploymentRule`/`PlatformConfigDeployment`/`ConfigDeploymentManifest`
+- 策略解析：`cgw_build/config.py` -> `DeployPolicyResolver`（精确优先 glob、同优先级冲突失败、未匹配默认 preserve、device-managed 不可 replace）
+
+### 设计 §9.5 配置校验接口
+
+- 服务声明：`manifests/services.yaml` -> `runtime.config_validation{schema,target_path,default_source}`
+- Schema：`manifests/schemas/service.schema.yaml`（runtime.config_validation）
+- 数据模型：`cgw_build/manifest.py` -> `ConfigValidation` / `RuntimeConfig.config_validation`
+- 校验器：`cgw_build/config.py` -> `ConfigValidator`（服务 schema 校验、common.yaml 校验、禁止服务顶层 `common:`）
+- 交叉校验：`cgw_build/validator.py` -> `validate_config_validation`
+
+### 设计 §9.6 秘密、权限与 Manifest
+
+- 秘密扫描：`cgw_build/secretscan.py` -> `SecretScanner`（PEM 私钥块、禁止扩展名、敏感字段名、provisioning 目录；只报告规则/文件/字段路径，不输出值）
+- 权限：非秘密 YAML 默认 0644（`_DEFAULT_MODE`）
+- Artifact 来源：`cgw_build/artifact.py` -> `ArtifactEntry.config_provenance` + `ArtifactManifest.attach_config_provenance`（default/platform 来源、final SHA、deploy policy、校验与秘密结果）
+
+### 设计 §9.7 策略化部署与一致回退
+
+- 部署计划：`cgw_build/deploy.py` -> `Deployer.build_deploy_plan`（create/replace/preserve 枚举、provisioning 排除）
+- 备份排除 provisioning：`cgw_build/deploy.py` -> backup 步骤 `grep -v credentials|provisioning`
+- 一致回退：`cgw_build/deploy.py` -> `_rollback`（整包 tar 恢复 framework+二进制+动态库+unit+replace 配置，非部分回退）
+- 部署报告：`DeployReport.deploy_plan`
+
+### 设计 §9.8 与 CGW-FW 六阶段关系
+
+- BUILD 只决定 `/etc/cgw/common.yaml` 与 `/etc/cgw/conf.d/<svc>.yaml` 来源；整文件覆盖不参与 CGW-FW 运行时深合并。HOST build overlay 为 no-op（`configs/host/rootfs` 不存在）。
+
+### 设计 §9.9 配置发布验证
+
+- 验收项全部由测试覆盖（见下表）。
+
+### CR-003 测试覆盖
+
+| 文件 | 覆盖范围 |
+|------|----------|
+| `tests/unit/test_config.py` | overlay 7 步算法、路径安全、原子写、授权/跳过、stale 清理、增量一致、schema/秘密失败、ConfigValidator、报告 |
+| `tests/unit/test_config_deployment.py` | config-deployment schema、数据模型、DeployPolicyResolver（精确/glob/冲突/默认 preserve/device-managed） |
+| `tests/unit/test_secret_scan.py` | PEM/扩展名/字段名/provisioning/report-only |
+| `tests/integration/test_config_release.py` | overlay 全流水线+manifest 来源、dev 不安装、common 仅 BUILD、deploy 计划+provisioning 排除+一致回退 |
+| `tests/integration/test_framework_build.py` | 真实 HOST build 生成 no-op overlay 报告、新 conf.d 路径安装 |

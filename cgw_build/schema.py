@@ -73,3 +73,8 @@ def validate_release_set_manifest(data: dict[str, Any], project_root: Path | Non
 def validate_dependency_lock(data: dict[str, Any], project_root: Path | None = None) -> None:
     """Validate a dependency lock dict against the lock schema."""
     _validate(data, "lock", "Dependency lock", project_root)
+
+
+def validate_config_deployment_manifest(data: dict[str, Any], project_root: Path | None = None) -> None:
+    """Validate a config-deployment manifest dict against the config-deployment schema."""
+    _validate(data, "config-deployment", "Config deployment manifest", project_root)

@@ -62,6 +62,21 @@ class BuildConfig:
 
 
 @dataclass
+class ConfigValidation:
+    """Schema/checker declaration for a service config file (设计 §9.5).
+
+    ``schema`` is the service-owned JSON Schema (YAML) path relative to the
+    service source directory; ``target_path`` is the final rootfs path;
+    ``default_source`` is the default template path relative to the service
+    source directory.
+    """
+
+    schema: str | None = None
+    target_path: str | None = None
+    default_source: str | None = None
+
+
+@dataclass
 class RuntimeConfig:
     """Runtime configuration for a single service."""
 
@@ -70,6 +85,7 @@ class RuntimeConfig:
     health_check: str | None = None
     smoke_test: str | None = None
     config_paths: list[str] = field(default_factory=list)
+    config_validation: ConfigValidation | None = None
     persistent_paths: list[str] = field(default_factory=list)
     required_devices: list[str] = field(default_factory=list)
     capabilities: list[str] = field(default_factory=list)
@@ -321,6 +337,62 @@ class DependencyLock:
 
 
 # ---------------------------------------------------------------------------
+# Config deployment model (设计 §9.4)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ConfigDeploymentRule:
+    """A single deployment policy rule for a config path (设计 §9.4).
+
+    Exactly one of ``path`` (exact) or ``path_glob`` (glob) is set.
+    """
+
+    owner: str  # build | service | provisioning
+    category: str  # release-managed | device-managed
+    deploy_policy: str  # replace | preserve | create_if_missing
+    path: str | None = None
+    path_glob: str | None = None
+
+    @property
+    def is_exact(self) -> bool:
+        return self.path is not None
+
+    @property
+    def pattern(self) -> str:
+        """The match pattern (exact path or glob)."""
+        return self.path if self.path is not None else self.path_glob  # type: ignore[return-value]
+
+
+@dataclass
+class PlatformConfigDeployment:
+    """Deployment policy rules for a single platform."""
+
+    platform: str
+    files: list[ConfigDeploymentRule]
+
+    def __iter__(self):
+        return iter(self.files)
+
+
+@dataclass
+class ConfigDeploymentManifest:
+    """Collection of config deployment policies for all platforms."""
+
+    version: int
+    platforms: dict[str, PlatformConfigDeployment]
+
+    def get(self, platform: str) -> PlatformConfigDeployment | None:
+        return self.platforms.get(platform)
+
+    def __contains__(self, platform: str) -> bool:
+        return platform in self.platforms
+
+    def __len__(self) -> int:
+        return len(self.platforms)
+
+
+# ---------------------------------------------------------------------------
 # Loading functions
 # ---------------------------------------------------------------------------
 
@@ -444,12 +516,23 @@ def _parse_build_config(data: dict[str, Any]) -> BuildConfig:
 
 
 def _parse_runtime_config(data: dict[str, Any]) -> RuntimeConfig:
+    cv_data = data.get("config_validation")
+    config_validation: ConfigValidation | None = None
+    if cv_data is not None:
+        if not isinstance(cv_data, dict):
+            raise SchemaValidationError("runtime.config_validation must be an object")
+        config_validation = ConfigValidation(
+            schema=cv_data.get("schema"),
+            target_path=cv_data.get("target_path"),
+            default_source=cv_data.get("default_source"),
+        )
     return RuntimeConfig(
         systemd_units=list(data.get("systemd_units", [])),
         after=list(data.get("after", [])),
         health_check=data.get("health_check"),
         smoke_test=data.get("smoke_test"),
         config_paths=list(data.get("config_paths", [])),
+        config_validation=config_validation,
         persistent_paths=list(data.get("persistent_paths", [])),
         required_devices=list(data.get("required_devices", [])),
         capabilities=list(data.get("capabilities", [])),
@@ -527,6 +610,31 @@ def load_release_set_manifest(path: Path) -> ReleaseSetManifest:
             profile=set_data.get("profile"),
         )
     return ReleaseSetManifest(release_sets=release_sets)
+
+
+def _parse_config_deployment_rule(data: dict[str, Any]) -> ConfigDeploymentRule:
+    return ConfigDeploymentRule(
+        owner=str(data["owner"]),
+        category=str(data["category"]),
+        deploy_policy=str(data["deploy_policy"]),
+        path=data.get("path"),
+        path_glob=data.get("path_glob"),
+    )
+
+
+def load_config_deployment_manifest(path: Path) -> ConfigDeploymentManifest:
+    """Load and parse a config-deployment manifest YAML file (设计 §9.4)."""
+    data = load_yaml(path)
+    version = int(data.get("version", 0))
+    raw_platforms = data.get("platforms", {})
+    platforms: dict[str, PlatformConfigDeployment] = {}
+    for plat, plat_data in raw_platforms.items():
+        rules = [
+            _parse_config_deployment_rule(r)
+            for r in (plat_data or {}).get("files", [])
+        ]
+        platforms[plat] = PlatformConfigDeployment(platform=plat, files=rules)
+    return ConfigDeploymentManifest(version=version, platforms=platforms)
 
 
 def load_platform_manifest(path: Path) -> PlatformManifest:
@@ -659,6 +767,18 @@ class Project:
         return self.manifests_dir / "dependency-lock.yaml"
 
     @property
+    def config_deployment_manifest_path(self) -> Path:
+        return self.manifests_dir / "config-deployment.yaml"
+
+    @property
+    def configs_dir(self) -> Path:
+        return self.root / "configs"
+
+    def platform_configs_root(self) -> Path:
+        """Platform source rootfs directory: configs/<platform>/rootfs."""
+        return self.configs_dir / self.platform / "rootfs"
+
+    @property
     def dependencies_dir(self) -> Path:
         return self.root / "dependencies"
 
@@ -738,6 +858,13 @@ class Project:
 
     def load_release_set_manifest(self) -> ReleaseSetManifest:
         return load_release_set_manifest(self.release_set_manifest_path)
+
+    def load_config_deployment_manifest(self) -> ConfigDeploymentManifest:
+        """Load the config deployment manifest, returning empty if absent."""
+        path = self.config_deployment_manifest_path
+        if not path.is_file():
+            return ConfigDeploymentManifest(version=0, platforms={})
+        return load_config_deployment_manifest(path)
 
     def staging_dir(self, profile: str = "release") -> Path:
         return self.out_dir / self.platform / profile

@@ -27,6 +27,7 @@ from .schema import (
     validate_release_set_manifest,
     validate_dependency_lock,
     validate_platform_manifest,
+    validate_config_deployment_manifest,
 )
 from .validator import validate_all
 from .graph import DependencyGraph
@@ -99,6 +100,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"  [FAIL] Dependency lock schema: {exc}")
         return 1
+
+    # Config deployment manifest (CR-003 §9.4)
+    cd_path = project.config_deployment_manifest_path
+    if cd_path.is_file():
+        cd_raw = load_yaml(cd_path)
+        try:
+            validate_config_deployment_manifest(cd_raw, project.root)
+            print(f"  [PASS] Config deployment manifest schema validation")
+        except Exception as exc:
+            print(f"  [FAIL] Config deployment manifest schema: {exc}")
+            return 1
+    else:
+        print(f"  [PASS] Config deployment manifest: (none)")
 
     # Load and cross-reference validation
     service_manifest = project.load_service_manifest()
@@ -294,6 +308,47 @@ def cmd_elfcheck(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config(args: argparse.Namespace) -> int:
+    """Apply platform config overlay to staging install-root (设计 §9.3)."""
+    project = _get_project(args)
+    from .staging import StagingDir
+    from .config import ConfigOverlay
+    from .errors import CgwBuildError
+
+    staging = StagingDir(project.root, args.platform, args.profile)
+    if not staging.install_root.exists():
+        print(f"Staging install-root not found: {staging.install_root}")
+        print("Run a build first.")
+        return 1
+
+    sm = project.load_service_manifest()
+    deployment = project.load_config_deployment_manifest()
+    overlay = ConfigOverlay(
+        platform=args.platform,
+        platform_rootfs=project.platform_configs_root(),
+        install_root=staging.install_root,
+        deployment=deployment,
+        service_manifest=sm,
+        project_root=project.root,
+        state_dir=staging.manifests_dir,
+    )
+    report = overlay.apply()
+    try:
+        overlay.check_report(report)
+    except CgwBuildError as exc:
+        print(f"Config overlay failed: {exc}")
+        for d in getattr(exc, "details", []):
+            print(f"  - {d}")
+        return 1
+    report.save(staging.manifests_dir / "config-overlay-report.json")
+    print(f"Config overlay: {len(report.overlaid)} overlaid, "
+          f"{len(report.removed)} removed, {len(report.skipped)} skipped")
+    for r in report.overlaid:
+        print(f"  {r.logical_path}: {r.deploy_policy} "
+              f"val={r.validation['status']} secret={r.secret_scan['status']}")
+    return 0
+
+
 def cmd_platforms(args: argparse.Namespace) -> int:
     """List available platform manifests."""
     project = _get_project(args)
@@ -383,6 +438,12 @@ def main(argv: list[str] | None = None) -> int:
     _add_common_args(p_elfcheck)
     p_elfcheck.add_argument("--profile", default="release")
     p_elfcheck.set_defaults(func=cmd_elfcheck)
+
+    # config
+    p_config = subparsers.add_parser("config", help="Apply platform config overlay to staging")
+    _add_common_args(p_config)
+    p_config.add_argument("--profile", default="release")
+    p_config.set_defaults(func=cmd_config)
 
     # platforms
     p_platforms = subparsers.add_parser("platforms", help="List available platform manifests")

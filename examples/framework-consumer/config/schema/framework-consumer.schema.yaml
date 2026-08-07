@@ -1,0 +1,14 @@
+# JSON Schema (Draft-07) for framework-consumer config (设计 §9.5).
+# Loaded by BUILD from the release-set-locked service source directory and
+# applied to the final /etc/cgw/conf.d/framework-consumer.yaml.
+$schema: "http://json-schema.org/draft-07/schema#"
+title: framework-consumer config
+type: object
+required:
+  - service_name
+properties:
+  service_name:
+    type: string
+    minLength: 1
+  greeting:
+    type: string

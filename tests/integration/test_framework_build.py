@@ -113,12 +113,26 @@ class TestFrameworkHostBuild:
         installed = con_result.components[0].installed_files
         assert any(f.endswith("bin/cgw-framework-consumer") for f in installed)
         assert any(f.endswith("cgw-framework-consumer.service") for f in installed)
-        assert any(f.endswith("cgw-framework-consumer.conf") for f in installed)
+        assert any(f.endswith("conf.d/framework-consumer.yaml") for f in installed)
         # The built consumer links the framework and reports OK
         bin_path = orch.staging.install_root / "usr" / "bin" / "cgw-framework-consumer"
         out = subprocess.run([str(bin_path)], capture_output=True, text=True)
         assert out.returncode == 0, out.stderr
         assert "cgw-framework-consumer: OK" in out.stdout
+
+    def test_host_build_overlay_report_noop(self, built_framework):
+        """CGW-BUILD-DSN-CR-003 §9.8: a HOST build produces a (no-op) config
+        overlay report because configs/host/rootfs does not exist."""
+        orch, report = built_framework
+        assert report.config_overlay_path is not None
+        overlay_path = orch.staging.manifests_dir / "config-overlay-report.json"
+        assert overlay_path.is_file()
+        with open(overlay_path) as f:
+            data = json.load(f)
+        assert data["platform"] == "host"
+        assert data["overlaid"] == []
+        # The service default config is installed at the new conf.d path
+        assert (orch.staging.install_root / "etc/cgw/conf.d/framework-consumer.yaml").is_file()
 
     def test_artifact_manifest_records_evidence(self, built_framework):
         orch, _ = built_framework

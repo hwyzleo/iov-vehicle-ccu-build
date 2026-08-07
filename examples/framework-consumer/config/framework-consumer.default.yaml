@@ -1,0 +1,5 @@
+# framework-consumer default configuration template (设计 §9.2).
+# Only legal field structure, types and safe defaults; no platform, model or
+# device-instance values and no top-level common: key.
+service_name: cgw-framework-consumer
+greeting: "CGW-Framework-Consumer"

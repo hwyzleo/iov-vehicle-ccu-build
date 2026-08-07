@@ -1,0 +1,76 @@
+# JSON Schema (Draft-07) for CGW Build Config Deployment Manifest
+# Validates manifests/config-deployment.yaml
+#
+# CR: CGW-BUILD-DSN-CR-003 §9.4 部署策略清单
+#
+# 字段策略：
+#   - deploy_policy 枚举为 replace|preserve|create_if_missing。
+#   - 精确路径 (path) 优先于 glob (path_glob)；同优先级多规则命中且策略
+#     不一致时由 BUILD 校验失败（§9.4）。
+#   - device-managed 文件不得使用 replace（由 BUILD 交叉校验保证）。
+$schema: "http://json-schema.org/draft-07/schema#"
+title: CGW Build Config Deployment Manifest
+type: object
+required:
+  - version
+  - platforms
+properties:
+  version:
+    type: integer
+    const: 1
+  platforms:
+    type: object
+    minProperties: 1
+    additionalProperties: false
+    patternProperties:
+      "^[a-z][a-z0-9-]*$":
+        type: object
+        required:
+          - files
+        additionalProperties: false
+        properties:
+          files:
+            type: array
+            minItems: 1
+            items:
+              type: object
+              required:
+                - owner
+                - category
+                - deploy_policy
+              additionalProperties: false
+              oneOf:
+                - required:
+                    - path
+                  not:
+                    required:
+                      - path_glob
+                - required:
+                    - path_glob
+                  not:
+                    required:
+                      - path
+              properties:
+                path:
+                  type: string
+                  minLength: 1
+                path_glob:
+                  type: string
+                  minLength: 1
+                owner:
+                  type: string
+                  enum:
+                    - build
+                    - service
+                    - provisioning
+                category:
+                  type: string
+                  enum:
+                    - release-managed
+                    - device-managed
+                deploy_policy:
+                  type: string
+                  enum:
+                    - replace
+                    - preserve
+                    - create_if_missing

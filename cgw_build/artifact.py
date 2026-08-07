@@ -45,6 +45,8 @@ class ArtifactEntry:
     install_component: str = "unknown"
     staging: str = "unknown"
     elf_info: dict[str, Any] | None = None
+    # Config release provenance (设计 §9.6); None for non-config files.
+    config_provenance: dict[str, Any] | None = None
 
 
 class ArtifactManifest:
@@ -133,6 +135,36 @@ class ArtifactManifest:
                 f"Installation path conflicts detected ({len(conflicts)} conflict(s))",
                 conflicts,
             )
+
+    def attach_config_provenance(self, overlay_report) -> None:
+        """Attach config release provenance from an overlay report (设计 §9.6).
+
+        Matches overlay records (logical path ``/etc/cgw/...``) to manifest
+        entries (path ``rootfs/etc/cgw/...``) and records default/platform
+        source, final SHA-256, deploy policy, validation and secret scan.
+        """
+        by_path: dict[str, dict[str, Any]] = {}
+        for rec in overlay_report.overlaid:
+            rel = rec.logical_path.lstrip("/")
+            by_path[rel] = {
+                "default_source": rec.pre_overlay_source,
+                "default_component": rec.pre_overlay_component,
+                "default_sha256": rec.pre_overlay_sha256,
+                "platform_source": rec.platform_source,
+                "platform_source_sha256": rec.platform_source_sha256,
+                "final_sha256": rec.final_sha256,
+                "owner": rec.owner,
+                "category": rec.category,
+                "deploy_policy": rec.deploy_policy,
+                "mode": rec.mode,
+                "validation": rec.validation,
+                "secret_scan": rec.secret_scan,
+            }
+        for entry in self.entries:
+            if entry.path.startswith("rootfs/"):
+                rel = entry.path[len("rootfs/"):]
+                if rel in by_path:
+                    entry.config_provenance = by_path[rel]
 
     def _dependency_lock_summary(self) -> list[dict[str, Any]]:
         if self.dependency_lock is None:

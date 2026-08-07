@@ -1,0 +1,27 @@
+# CGW Build Config Deployment Manifest
+# Declares deploy policy for /etc/cgw/** files per platform (设计 §9.4).
+#
+# CR: CGW-BUILD-DSN-CR-003 §9.4
+#
+# deploy_policy: replace|preserve|create_if_missing
+#   - release-managed 配置 MAY 使用 replace；
+#   - device-managed/provisioning 内容必须使用 preserve；
+#   - 未匹配策略的路径默认 preserve（由 BUILD 兜底保证）。
+# 精确路径优先于 glob；同优先级多规则命中且策略不一致时失败。
+# device-managed 文件不得 replace。
+version: 1
+platforms:
+  cgw-dev:
+    files:
+      - path: /etc/cgw/common.yaml
+        owner: build
+        category: release-managed
+        deploy_policy: replace
+      - path_glob: /etc/cgw/conf.d/*.yaml
+        owner: service
+        category: release-managed
+        deploy_policy: replace
+      - path_glob: /etc/cgw/credentials/**
+        owner: provisioning
+        category: device-managed
+        deploy_policy: preserve

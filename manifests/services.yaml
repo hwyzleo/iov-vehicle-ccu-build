@@ -49,7 +49,12 @@ services:
       health_check: tests/smoke/hello-health.sh
       smoke_test: tests/smoke/hello-ipc.sh
       config_paths:
-        - /etc/cgw/hello
+        - /etc/cgw/common.yaml
+        - /etc/cgw/conf.d/cgw-hello-cli.yaml
+      config_validation:
+        schema: config/schema/cgw-hello-cli.schema.yaml
+        target_path: /etc/cgw/conf.d/cgw-hello-cli.yaml
+        default_source: config/cgw-hello-cli.default.yaml
       persistent_paths:
         - /var/lib/cgw/hello
       required_devices: []
@@ -109,7 +114,12 @@ services:
       health_check: tests/smoke/framework-consumer-health.sh
       smoke_test: tests/smoke/framework-consumer-ipc.sh
       config_paths:
-        - /etc/cgw/framework-consumer
+        - /etc/cgw/common.yaml
+        - /etc/cgw/conf.d/framework-consumer.yaml
+      config_validation:
+        schema: config/schema/framework-consumer.schema.yaml
+        target_path: /etc/cgw/conf.d/framework-consumer.yaml
+        default_source: config/framework-consumer.default.yaml
       persistent_paths:
         - /var/lib/cgw/framework-consumer
       required_devices: []

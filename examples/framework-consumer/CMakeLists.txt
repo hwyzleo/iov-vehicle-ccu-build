@@ -52,6 +52,6 @@ cgw_install_target(cgw-framework-consumer
 cgw_install_systemd_unit(systemd/cgw-framework-consumer.service
         COMPONENT cgw-framework-consumer-runtime
 )
-cgw_install_config(config/cgw-framework-consumer.conf
+cgw_install_default_config(framework-consumer config/framework-consumer.default.yaml
         COMPONENT cgw-framework-consumer-runtime
 )

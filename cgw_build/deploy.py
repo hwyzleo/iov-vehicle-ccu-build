@@ -19,6 +19,7 @@ invocation time.
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import tarfile
@@ -53,6 +54,8 @@ class DeployReport:
     errors: list[str] = field(default_factory=list)
     started_at: str = ""
     finished_at: str = ""
+    # Config deploy plan (设计 §9.7): per-file create/replace/preserve.
+    deploy_plan: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -83,6 +86,7 @@ class Deployer:
         self.smoke_settle_seconds = smoke_settle_seconds
         self.staging_platform = platform
         self._units: list[str] = []
+        self._config_deployment = project.load_config_deployment_manifest()
         self._stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         self.remote_stage = f"/tmp/cgw-deploy-{self._stamp}"
         self.backup_path = f"/var/lib/cgw/backups/cgw-{self._stamp}.tar.gz"
@@ -148,6 +152,68 @@ class Deployer:
         except Exception:
             return sorted(present)
 
+    # -- config deploy plan ----------------------------------------------
+
+    def build_deploy_plan(self, payload_root: Path) -> dict[str, Any]:
+        """Enumerate /etc/cgw/** payload files and classify by deploy policy.
+
+        Forms the create/replace/preserve plan (设计 §9.7). Provisioning /
+        device-managed content is classified preserve and recorded as
+        excluded so it never enters backup or report output.
+        """
+        from .config import DeployPolicyResolver
+
+        plat = self._config_deployment.get(self.staging_platform)
+        resolver = DeployPolicyResolver(
+            plat.files if plat is not None else []
+        )
+        create: list[dict[str, str]] = []
+        replace: list[dict[str, str]] = []
+        preserve: list[dict[str, str]] = []
+        excluded: list[dict[str, str]] = []
+        cgw_root = payload_root / "etc" / "cgw"
+        if cgw_root.is_dir():
+            for path in sorted(cgw_root.rglob("*")):
+                if not path.is_file():
+                    continue
+                rel = str(path.relative_to(payload_root)).replace(os.sep, "/")
+                logical = "/" + rel
+                try:
+                    rule = resolver.resolve(logical)
+                except Exception:
+                    rule = None
+                if rule is None:
+                    preserve.append({
+                        "path": logical, "deploy_policy": "preserve",
+                        "reason": "unmatched default preserve",
+                    })
+                    continue
+                entry = {
+                    "path": logical,
+                    "deploy_policy": rule.deploy_policy,
+                    "owner": rule.owner,
+                    "category": rule.category,
+                }
+                if rule.owner == "provisioning":
+                    excluded.append(entry)
+                if rule.deploy_policy == "replace":
+                    replace.append(entry)
+                elif rule.deploy_policy == "create_if_missing":
+                    create.append(entry)
+                else:
+                    preserve.append(entry)
+        return {
+            "create": create,
+            "replace": replace,
+            "preserve": preserve,
+            "excluded_provisioning": excluded,
+            "summary": {
+                "create": len(create),
+                "replace": len(replace),
+                "preserve": len(preserve),
+            },
+        }
+
     # -- plan -------------------------------------------------------------
 
     def build_plan(self, payload_root: Path) -> list[DeployStep]:
@@ -166,7 +232,8 @@ class Deployer:
             " ".join(shlex.quote(c) for c in self._ssh_cmd(self._sudo_sh(
                 f"mkdir -p /var/lib/cgw/backups && "
                 f"tar -C / -czf {self.backup_path} "
-                f"$(cd {self.remote_stage}/rootfs && find . -type f -o -type l | sed 's#^\\./##') "
+                f"$(cd {self.remote_stage}/rootfs && find . -type f -o -type l | "
+                f"sed 's#^\\./##' | grep -v -E '^etc/cgw/(credentials|provisioning)/') "
                 f"2>/dev/null || true"))),
         ]))
         steps.append(DeployStep("install", commands=[
@@ -256,6 +323,7 @@ class Deployer:
 
         with tempfile.TemporaryDirectory(prefix="cgw-deploy-") as tmp:
             payload_root = self._extract(package_path, Path(tmp))
+            report.deploy_plan = self.build_deploy_plan(payload_root)
             plan = self.build_plan(payload_root)
 
             if not do_execute:

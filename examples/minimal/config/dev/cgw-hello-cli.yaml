@@ -1,0 +1,6 @@
+# cgw-hello-cli development fixture (设计 §9.2).
+# NOT installed by the runtime component; only referenced by local dev/test
+# entry points. Must not contain real secrets, production certificates or
+# device-unique values.
+service_name: cgw-hello-dev
+greeting: "CGW-Hello (dev)"

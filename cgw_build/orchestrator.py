@@ -27,8 +27,9 @@ from pathlib import Path
 from typing import Any
 
 from .artifact import ArtifactManifest, get_git_commit
+from .config import ConfigOverlay
 from .elfcheck import check_staging, ElfCheckResult, EM_AARCH64, EM_X86_64, _ELFCLASS64, _MACHINE_NAMES
-from .errors import BuildFailure, CgwBuildError
+from .errors import BuildFailure, CgwBuildError, ConfigError
 from .graph import DependencyGraph
 from .manifest import (
     Project,
@@ -38,7 +39,7 @@ from .manifest import (
     InstallComponent,
 )
 from .schema import validate_service_manifest, validate_release_set_manifest, validate_dependency_lock
-from .staging import StagingDir
+from .staging import StagingDir, sha256_file
 from .validator import validate_all
 
 
@@ -134,6 +135,7 @@ class BuildReport:
     status: str = "pending"
     service_results: list[ServiceResult] = field(default_factory=list)
     artifact_manifest_path: str | None = None
+    config_overlay_path: str | None = None
     elf_check_violations: int = 0
     elf_check_warnings: int = 0
     errors: list[str] = field(default_factory=list)
@@ -510,6 +512,24 @@ class BuildOrchestrator:
                     report.errors.append(f"Service '{sid}' failed: {result.error}")
                     break
 
+            # 5.5. Apply platform config overlay (设计 §9.3/§9.6)
+            overlay_report = None
+            if report.status != "failed" and not self.config.dry_run:
+                print("\n=== Applying platform config overlay ===")
+                try:
+                    overlay_report = self._apply_config_overlay(
+                        service_manifest, report.service_results
+                    )
+                    report.config_overlay_path = str(
+                        (self.staging.manifests_dir / "config-overlay-report.json")
+                        .relative_to(self.project.root)
+                    )
+                except ConfigError as exc:
+                    report.status = "failed"
+                    report.errors.append(f"Config overlay failed: {exc}")
+                    if exc.details:
+                        report.errors.extend(exc.details)
+
             # 6. ELF / pollution check (only for target builds; host builds
             #    skip arch check since Mach-O/ELF depends on the host OS)
             if report.status != "failed" and not self.config.dry_run and self.config.is_target:
@@ -532,7 +552,8 @@ class BuildOrchestrator:
             if report.status != "failed" and not self.config.dry_run:
                 print("\n=== Generating artifact manifest ===")
                 artifact_manifest = self._generate_artifact_manifest(
-                    service_manifest, lock, git_commit, report.service_results
+                    service_manifest, lock, git_commit, report.service_results,
+                    overlay_report,
                 )
                 manifest_path = self.staging.manifests_dir / "artifact-manifest.json"
                 artifact_manifest.save(manifest_path)
@@ -619,12 +640,56 @@ class BuildOrchestrator:
         print(f"=== TARGET dependencies: {target_deps} (staged at {dep_usr}) ===")
         return target_deps
 
+    def _build_config_file_owners(
+        self, service_results: list[ServiceResult]
+    ) -> dict[str, tuple[str, str, str]]:
+        """Map install-root-relative paths to (service, component, sha256).
+
+        Only rootfs-staged component outputs are considered; these are the
+        pre-overlay installers of config files (设计 §9.3 step 4).
+        """
+        owners: dict[str, tuple[str, str, str]] = {}
+        for result in service_results:
+            for comp in result.components:
+                if comp.staging != "rootfs":
+                    continue
+                for f in comp.installed_files:
+                    full = self.staging.install_root / f
+                    sha = sha256_file(full) if full.is_file() else ""
+                    owners[f] = (result.id, comp.name, sha)
+        return owners
+
+    def _apply_config_overlay(
+        self,
+        service_manifest: ServiceManifest,
+        service_results: list[ServiceResult],
+    ):
+        """Apply the platform config overlay to install-root (设计 §9.3)."""
+        deployment = self.project.load_config_deployment_manifest()
+        file_owners = self._build_config_file_owners(service_results)
+        overlay = ConfigOverlay(
+            platform=self.config.platform,
+            platform_rootfs=self.project.platform_configs_root(),
+            install_root=self.staging.install_root,
+            deployment=deployment,
+            service_manifest=service_manifest,
+            project_root=self.project.root,
+            state_dir=self.staging.manifests_dir,
+        )
+        report = overlay.apply(file_owners)
+        overlay.check_report(report)
+        report.save(self.staging.manifests_dir / "config-overlay-report.json")
+        print(f"  {len(report.overlaid)} file(s) overlaid, "
+              f"{len(report.removed)} removed, {len(report.skipped)} skipped")
+        return report
+
     def _generate_artifact_manifest(
         self,
         service_manifest: ServiceManifest,
         lock,
         git_commit: str,
         service_results: list[ServiceResult],
+        overlay_report=None,
     ) -> ArtifactManifest:
         """Generate the artifact manifest from staging files."""
         platform_manifest = self.project.load_platform_manifest()
@@ -689,4 +754,6 @@ class BuildOrchestrator:
             )
 
         manifest.check_conflicts()
+        if overlay_report is not None:
+            manifest.attach_config_provenance(overlay_report)
         return manifest

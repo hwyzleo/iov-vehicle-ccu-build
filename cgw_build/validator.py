@@ -210,6 +210,54 @@ def validate_health_smoke(manifest: ServiceManifest, project_root: Path) -> None
         )
 
 
+def validate_config_validation(manifest: ServiceManifest) -> None:
+    """Check config_validation declarations (设计 §9.5).
+
+    A service that declares ``config_validation`` must provide schema,
+    target_path and default_source. ``target_path`` must be under
+    ``/etc/cgw/conf.d/`` (never ``common.yaml``, which is BUILD-only per
+    REQ-004) and must be listed in ``runtime.config_paths``.
+    """
+    violations: list[str] = []
+    for svc in manifest:
+        cv = svc.runtime.config_validation
+        if cv is None:
+            continue
+        if not cv.schema:
+            violations.append(
+                f"Service '{svc.id}' config_validation.schema is required"
+            )
+        if not cv.target_path:
+            violations.append(
+                f"Service '{svc.id}' config_validation.target_path is required"
+            )
+        if not cv.default_source:
+            violations.append(
+                f"Service '{svc.id}' config_validation.default_source is required"
+            )
+        if cv.target_path:
+            if cv.target_path == "/etc/cgw/common.yaml":
+                violations.append(
+                    f"Service '{svc.id}' config_validation.target_path must not "
+                    f"be /etc/cgw/common.yaml (common.yaml is BUILD-only, REQ-004)"
+                )
+            elif not cv.target_path.startswith("/etc/cgw/conf.d/"):
+                violations.append(
+                    f"Service '{svc.id}' config_validation.target_path must be "
+                    f"under /etc/cgw/conf.d/"
+                )
+            if cv.target_path not in svc.runtime.config_paths:
+                violations.append(
+                    f"Service '{svc.id}' config_validation.target_path "
+                    f"'{cv.target_path}' not listed in runtime.config_paths"
+                )
+    if violations:
+        raise ValidationFailure(
+            f"config_validation validation failed ({len(violations)} violation(s))",
+            violations,
+        )
+
+
 def validate_all(
     manifest: ServiceManifest, project_root: Path, lock: DependencyLock | None = None
 ) -> list[str]:
@@ -255,5 +303,8 @@ def validate_all(
 
     # 7. health/smoke script existence
     validate_health_smoke(manifest, project_root)
+
+    # 8. config_validation declarations (CR-003 §9.5)
+    validate_config_validation(manifest)
 
     return warnings
