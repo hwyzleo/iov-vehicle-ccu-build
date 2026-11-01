@@ -28,44 +28,44 @@
             }
         },
         {
-            "name": "cgw-dev-debug",
-            "displayName": "CGW-Dev Debug (target)",
-            "description": "Cross-compile debug build for CGW target using cgw-target toolchain",
+            "name": "ccu-dev-debug",
+            "displayName": "CCU-Dev Debug (target)",
+            "description": "Cross-compile debug build for CCU target using ccu-target toolchain",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/cgw-dev-debug",
-            "toolchainFile": "$env{CGW_ROOT}/cmake/toolchains/cgw-target.cmake",
+            "binaryDir": "${sourceDir}/build/ccu-dev-debug",
+            "toolchainFile": "$env{CCU_ROOT}/cmake/toolchains/ccu-target.cmake",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_INSTALL_PREFIX": "/usr",
-                "CGW_SYSROOT": "$env{CGW_ROOT}/sysroots/cgw-dev-sysroot",
-                "CGW_ROOT": "$env{CGW_ROOT}"
+                "CCU_SYSROOT": "$env{CCU_ROOT}/sysroots/ccu-dev-sysroot",
+                "CCU_ROOT": "$env{CCU_ROOT}"
             },
             "environment": {
-                "CGW_SYSROOT": "$env{CGW_ROOT}/sysroots/cgw-dev-sysroot"
+                "CCU_SYSROOT": "$env{CCU_ROOT}/sysroots/ccu-dev-sysroot"
             }
         },
         {
-            "name": "cgw-dev-release",
-            "displayName": "CGW-Dev Release (target)",
-            "description": "Cross-compile release build for CGW target using cgw-target toolchain",
+            "name": "ccu-dev-release",
+            "displayName": "CCU-Dev Release (target)",
+            "description": "Cross-compile release build for CCU target using ccu-target toolchain",
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/cgw-dev-release",
-            "toolchainFile": "$env{CGW_ROOT}/cmake/toolchains/cgw-target.cmake",
+            "binaryDir": "${sourceDir}/build/ccu-dev-release",
+            "toolchainFile": "$env{CCU_ROOT}/cmake/toolchains/ccu-target.cmake",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_INSTALL_PREFIX": "/usr",
-                "CGW_SYSROOT": "$env{CGW_ROOT}/sysroots/cgw-dev-sysroot",
-                "CGW_ROOT": "$env{CGW_ROOT}"
+                "CCU_SYSROOT": "$env{CCU_ROOT}/sysroots/ccu-dev-sysroot",
+                "CCU_ROOT": "$env{CCU_ROOT}"
             },
             "environment": {
-                "CGW_SYSROOT": "$env{CGW_ROOT}/sysroots/cgw-dev-sysroot"
+                "CCU_SYSROOT": "$env{CCU_ROOT}/sysroots/ccu-dev-sysroot"
             }
         }
     ],
     "buildPresets": [
         { "name": "host-debug",      "configurePreset": "host-debug" },
         { "name": "host-release",    "configurePreset": "host-release" },
-        { "name": "cgw-dev-debug",   "configurePreset": "cgw-dev-debug" },
-        { "name": "cgw-dev-release", "configurePreset": "cgw-dev-release" }
+        { "name": "ccu-dev-debug",   "configurePreset": "ccu-dev-debug" },
+        { "name": "ccu-dev-release", "configurePreset": "ccu-dev-release" }
     ]
 }

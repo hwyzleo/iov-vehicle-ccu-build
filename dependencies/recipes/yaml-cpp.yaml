@@ -1,8 +1,8 @@
-# yaml-cpp TARGET dependency recipe stub (CGW-BUILD-DSN-CR-002 §3)
+# yaml-cpp TARGET dependency recipe stub (CCU-BUILD-DSN-CR-002 §3)
 #
 # Records the controlled source/build metadata for yaml-cpp, the framework's
 # first TARGET dependency. Real recipe execution (source build into
-# CGW_DEP_STAGING) is a future CR; the orchestrator currently verifies
+# CCU_DEP_STAGING) is a future CR; the orchestrator currently verifies
 # controlled presence (fail-closed). See README.md in this directory.
 #
 # Lock entry: manifests/dependency-lock.yaml -> dependencies.yaml-cpp

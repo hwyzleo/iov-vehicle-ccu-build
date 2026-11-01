@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.manifest import Project
-from cgw_build.orchestrator import BuildOrchestrator, BuildConfig
-from cgw_build.packaging import Packager
-from cgw_build.staging import StagingDir, sha256_file
-from cgw_build.verify import Verifier
-from cgw_build.artifact import get_git_commit
+from ccu_build.manifest import Project
+from ccu_build.orchestrator import BuildOrchestrator, BuildConfig
+from ccu_build.packaging import Packager
+from ccu_build.staging import StagingDir, sha256_file
+from ccu_build.verify import Verifier
+from ccu_build.artifact import get_git_commit
 
 
 class TestPackageCreation:
@@ -21,39 +21,39 @@ class TestPackageCreation:
 
     def _prepare_staging_with_artifacts(self, project_root: Path, tmp_path: Path) -> StagingDir:
         """Create a staging dir with some files and an artifact manifest."""
-        staging = StagingDir(project_root, platform="cgw-dev", profile="release")
+        staging = StagingDir(project_root, platform="ccu-dev", profile="release")
         staging.prepare(clean=True)
 
         # Create some install-root files
         bin_dir = staging.install_root / "usr" / "bin"
         bin_dir.mkdir(parents=True)
-        (bin_dir / "cgw-hello-cli").write_text("dummy binary")
-        (bin_dir / "cgw-hello-cli").chmod(0o755)
+        (bin_dir / "ccu-hello-cli").write_text("dummy binary")
+        (bin_dir / "ccu-hello-cli").chmod(0o755)
 
         lib_dir = staging.install_root / "usr" / "lib"
         lib_dir.mkdir(parents=True)
-        (lib_dir / "libcgw-hello.so").write_text("dummy lib")
+        (lib_dir / "libccu-hello.so").write_text("dummy lib")
 
         # Create a minimal artifact manifest
-        project = Project(project_root, platform="cgw-dev")
-        from cgw_build.manifest import PlatformManifest, SysrootManifest, DependencyLock
-        from cgw_build.artifact import ArtifactManifest
+        project = Project(project_root, platform="ccu-dev")
+        from ccu_build.manifest import PlatformManifest, SysrootManifest, DependencyLock
+        from ccu_build.artifact import ArtifactManifest
 
         pm = project.load_platform_manifest()
         sm = project.load_sysroot_manifest()
         lock = project.load_dependency_lock()
 
         manifest = ArtifactManifest(
-            platform="cgw-dev", profile="release",
+            platform="ccu-dev", profile="release",
             platform_manifest=pm, sysroot_manifest=sm, dependency_lock=lock,
         )
 
-        from cgw_build.staging import StagedFile
+        from ccu_build.staging import StagedFile
         for f in staging.scan_files():
             manifest.add_staged_file(
-                f, owner_service="cgw-hello-cli", owner_target="cgw-hello-cli",
+                f, owner_service="ccu-hello-cli", owner_target="ccu-hello-cli",
                 version="0.1.0", git_commit="abc123",
-                install_component="cgw-hello-cli-runtime", staging="rootfs",
+                install_component="ccu-hello-cli-runtime", staging="rootfs",
             )
 
         manifest_path = staging.manifests_dir / "artifact-manifest.json"
@@ -66,7 +66,7 @@ class TestPackageCreation:
         git_commit = get_git_commit(project_root)
 
         pkg_path = packager.create_package(
-            name="cgw-dev",
+            name="ccu-dev",
             version="0.1.0-draft",
             git_commit=git_commit,
         )
@@ -83,9 +83,9 @@ class TestPackageCreation:
         assert meta_path.exists()
         with open(meta_path) as f:
             meta = json.load(f)
-        assert meta["package_name"] == "cgw-dev"
+        assert meta["package_name"] == "ccu-dev"
         assert meta["version"] == "0.1.0-draft"
-        assert meta["platform"] == "cgw-dev"
+        assert meta["platform"] == "ccu-dev"
 
     def test_package_checksum_matches(self, project_root: Path):
         staging = self._prepare_staging_with_artifacts(project_root, Path("/tmp"))
@@ -93,7 +93,7 @@ class TestPackageCreation:
         git_commit = get_git_commit(project_root)
 
         pkg_path = packager.create_package(
-            name="cgw-dev", version="0.1.0-draft", git_commit=git_commit,
+            name="ccu-dev", version="0.1.0-draft", git_commit=git_commit,
         )
 
         checksum_file = pkg_path.with_suffix(".sha256")
@@ -107,7 +107,7 @@ class TestPackageCreation:
         git_commit = get_git_commit(project_root)
 
         pkg_path = packager.create_package(
-            name="cgw-dev", version="0.1.0-draft", git_commit=git_commit,
+            name="ccu-dev", version="0.1.0-draft", git_commit=git_commit,
         )
 
         with tarfile.open(pkg_path, "r:gz") as tar:
@@ -121,7 +121,7 @@ class TestPackageVerification:
     """Test package verification."""
 
     def test_verify_valid_package(self, project_root: Path):
-        staging = StagingDir(project_root, platform="cgw-dev", profile="release")
+        staging = StagingDir(project_root, platform="ccu-dev", profile="release")
         staging.prepare(clean=True)
 
         # Create minimal staging
@@ -130,14 +130,14 @@ class TestPackageVerification:
         (bin_dir / "test").write_text("test")
 
         # Create artifact manifest
-        project = Project(project_root, platform="cgw-dev")
-        from cgw_build.manifest import PlatformManifest, SysrootManifest
-        from cgw_build.artifact import ArtifactManifest
+        project = Project(project_root, platform="ccu-dev")
+        from ccu_build.manifest import PlatformManifest, SysrootManifest
+        from ccu_build.artifact import ArtifactManifest
 
         pm = project.load_platform_manifest()
         sm = project.load_sysroot_manifest()
         manifest = ArtifactManifest(
-            platform="cgw-dev", profile="release",
+            platform="ccu-dev", profile="release",
             platform_manifest=pm, sysroot_manifest=sm,
         )
         manifest_path = staging.manifests_dir / "artifact-manifest.json"
@@ -146,7 +146,7 @@ class TestPackageVerification:
         # Create package
         packager = Packager(staging)
         pkg_path = packager.create_package(
-            name="cgw-dev", version="0.1.0-draft",
+            name="ccu-dev", version="0.1.0-draft",
             git_commit=get_git_commit(project_root),
         )
 
@@ -156,14 +156,14 @@ class TestPackageVerification:
         assert result.status == "success"
 
     def test_verify_nonexistent_package(self, project_root: Path):
-        staging = StagingDir(project_root, platform="cgw-dev", profile="release")
+        staging = StagingDir(project_root, platform="ccu-dev", profile="release")
         staging.prepare(clean=True)
         verifier = Verifier(staging)
         result = verifier.verify_package(Path("/nonexistent/package.tar.gz"))
         assert result.status == "failed"
 
     def test_verify_staging_no_install_root(self, project_root: Path):
-        staging = StagingDir(project_root, platform="cgw-dev", profile="release")
+        staging = StagingDir(project_root, platform="ccu-dev", profile="release")
         # Don't prepare - install-root doesn't exist
         verifier = Verifier(staging)
         result = verifier.verify_staging()

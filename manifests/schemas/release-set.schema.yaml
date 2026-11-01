@@ -1,9 +1,9 @@
-# JSON Schema (Draft-07) for CGW Build Release Set Manifest
+# JSON Schema (Draft-07) for CCU Build Release Set Manifest
 # Validates manifests/release-sets.yaml
 #
-# CR: CGW-BUILD-DSN-CR-001 §5 项目与编排模型
+# CR: CCU-BUILD-DSN-CR-001 §5 项目与编排模型
 $schema: "http://json-schema.org/draft-07/schema#"
-title: CGW Build Release Set Manifest
+title: CCU Build Release Set Manifest
 type: object
 required:
   - release_sets

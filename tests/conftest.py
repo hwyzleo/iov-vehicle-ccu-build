@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for CGW Build tests."""
+"""Shared pytest fixtures for CCU Build tests."""
 
 from __future__ import annotations
 
@@ -8,22 +8,22 @@ from pathlib import Path
 
 import pytest
 
-# Ensure cgw_build package is importable
+# Ensure ccu_build package is importable
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
 @pytest.fixture
 def project_root() -> Path:
-    """Path to the cgw-build project root."""
+    """Path to the ccu-build project root."""
     return PROJECT_ROOT
 
 
 @pytest.fixture
 def project(project_root: Path):
-    """A Project instance for cgw-dev platform."""
-    from cgw_build.manifest import Project
-    return Project(project_root, platform="cgw-dev")
+    """A Project instance for ccu-dev platform."""
+    from ccu_build.manifest import Project
+    return Project(project_root, platform="ccu-dev")
 
 
 # --- ELF test fixtures ---------------------------------------------------

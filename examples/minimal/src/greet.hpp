@@ -1,13 +1,13 @@
-#ifndef CGW_GREET_HPP
-#define CGW_GREET_HPP
+#ifndef CCU_GREET_HPP
+#define CCU_GREET_HPP
 
 #include <string>
 
-namespace cgw {
+namespace ccu {
 
 /// Return a greeting string for the given name.
 std::string greet(const std::string &name);
 
-}  // namespace cgw
+}  // namespace ccu
 
-#endif  // CGW_GREET_HPP
+#endif  // CCU_GREET_HPP

@@ -1,12 +1,12 @@
-# JSON Schema (Draft-07) for CGW Build Dependency Lock File
+# JSON Schema (Draft-07) for CCU Build Dependency Lock File
 # Validates manifests/dependency-lock.yaml
 #
-# CR: CGW-BUILD-DSN-CR-001 §4 依赖与 ABI / §8 依赖管理
+# CR: CCU-BUILD-DSN-CR-001 §4 依赖与 ABI / §8 依赖管理
 #
 # 记录 TARGET 依赖的版本、来源、许可证、补丁、构建参数、目标架构和 SHA-256。
 # 发布构建不得使用未锁定在线下载或构建容器偶然安装的 TARGET 包。
 $schema: "http://json-schema.org/draft-07/schema#"
-title: CGW Build Dependency Lock
+title: CCU Build Dependency Lock
 type: object
 required:
   - dependencies

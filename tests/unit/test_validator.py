@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.errors import ValidationFailure
-from cgw_build.manifest import Service, ServiceManifest, BuildConfig, DependencyLock
-from cgw_build.validator import (
+from ccu_build.errors import ValidationFailure
+from ccu_build.manifest import Service, ServiceManifest, BuildConfig, DependencyLock
+from ccu_build.validator import (
     validate_service_dependencies,
     validate_target_dependencies,
     validate_library_kind,
@@ -75,7 +75,7 @@ class TestTargetDependencyValidation:
         manifest = ServiceManifest(services={
             "a": _svc("a", target_deps=["yaml-cpp"]),
         })
-        from cgw_build.manifest import DependencyEntry
+        from ccu_build.manifest import DependencyEntry
         lock = DependencyLock(dependencies={
             "yaml-cpp": DependencyEntry(
                 name="yaml-cpp", version="0.8.0", source_url="u",
@@ -88,7 +88,7 @@ class TestTargetDependencyValidation:
 
 class TestLibraryKindValidation:
     def test_library_with_units_rejected(self):
-        from cgw_build.manifest import RuntimeConfig
+        from ccu_build.manifest import RuntimeConfig
         manifest = ServiceManifest(services={
             "lib": Service(
                 id="lib", repository=".", kind="library",
@@ -108,7 +108,7 @@ class TestLibraryKindValidation:
 
 class TestSystemdReferenceValidation:
     def test_unknown_unit_rejected(self):
-        from cgw_build.manifest import RuntimeConfig
+        from ccu_build.manifest import RuntimeConfig
         manifest = ServiceManifest(services={
             "a": Service(
                 id="a", repository=".",
@@ -120,7 +120,7 @@ class TestSystemdReferenceValidation:
             validate_systemd_references(manifest)
 
     def test_well_known_target_passes(self):
-        from cgw_build.manifest import RuntimeConfig
+        from ccu_build.manifest import RuntimeConfig
         manifest = ServiceManifest(services={
             "a": Service(
                 id="a", repository=".",
@@ -133,8 +133,8 @@ class TestSystemdReferenceValidation:
 
 class TestFullValidation:
     def test_validate_all_passes(self, project_root: Path):
-        from cgw_build.manifest import Project
-        project = Project(project_root, platform="cgw-dev")
+        from ccu_build.manifest import Project
+        project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
         lock = project.load_dependency_lock()
         warnings = validate_all(manifest, project_root, lock)

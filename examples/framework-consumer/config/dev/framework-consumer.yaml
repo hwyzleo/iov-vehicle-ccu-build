@@ -1,4 +1,4 @@
 # framework-consumer development fixture (设计 §9.2).
 # NOT installed by the runtime component; local dev/test only.
-service_name: cgw-framework-consumer-dev
-greeting: "CGW-Framework-Consumer (dev)"
+service_name: ccu-framework-consumer-dev
+greeting: "CCU-Framework-Consumer (dev)"

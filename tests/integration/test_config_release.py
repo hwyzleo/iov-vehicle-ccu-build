@@ -1,6 +1,6 @@
 """Integration tests for config release pipeline (设计 §9.9).
 
-Covers the CGW-BUILD-DSN-CR-003 acceptance criteria:
+Covers the CCU-BUILD-DSN-CR-003 acceptance criteria:
   * dev fixtures not installed; default templates precisely installed;
   * platform whole-file overlay authorized with pre/post source records;
   * common.yaml only BUILD source; service configs no top-level common:;
@@ -18,13 +18,13 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.artifact import ArtifactManifest
-from cgw_build.config import ConfigOverlay
-from cgw_build.deploy import Deployer
-from cgw_build.manifest import Project
-from cgw_build.packaging import Packager
-from cgw_build.staging import StagingDir, sha256_file
-from cgw_build.artifact import get_git_commit
+from ccu_build.artifact import ArtifactManifest
+from ccu_build.config import ConfigOverlay
+from ccu_build.deploy import Deployer
+from ccu_build.manifest import Project
+from ccu_build.packaging import Packager
+from ccu_build.staging import StagingDir, sha256_file
+from ccu_build.artifact import get_git_commit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,7 +36,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture
 def project(project_root: Path):
-    return Project(project_root, platform="cgw-dev")
+    return Project(project_root, platform="ccu-dev")
 
 
 @pytest.fixture
@@ -46,18 +46,18 @@ def seeded_install_root(project, tmp_path: Path):
     state_dir = tmp_path / "manifests"
     install_root.mkdir(parents=True)
     state_dir.mkdir(parents=True)
-    confd = install_root / "etc/cgw/conf.d"
+    confd = install_root / "etc/ccu/conf.d"
     confd.mkdir(parents=True)
-    d1 = (project.root / "examples/minimal/config/cgw-hello-cli.default.yaml").read_bytes()
+    d1 = (project.root / "examples/minimal/config/ccu-hello-cli.default.yaml").read_bytes()
     d2 = (project.root / "examples/framework-consumer/config/framework-consumer.default.yaml").read_bytes()
-    (confd / "cgw-hello-cli.yaml").write_bytes(d1)
+    (confd / "ccu-hello-cli.yaml").write_bytes(d1)
     (confd / "framework-consumer.yaml").write_bytes(d2)
     owners = {
-        "etc/cgw/conf.d/cgw-hello-cli.yaml": (
-            "cgw-hello-cli", "cgw-hello-cli-runtime",
-            sha256_file(confd / "cgw-hello-cli.yaml")),
-        "etc/cgw/conf.d/framework-consumer.yaml": (
-            "framework-consumer", "cgw-framework-consumer-runtime",
+        "etc/ccu/conf.d/ccu-hello-cli.yaml": (
+            "ccu-hello-cli", "ccu-hello-cli-runtime",
+            sha256_file(confd / "ccu-hello-cli.yaml")),
+        "etc/ccu/conf.d/framework-consumer.yaml": (
+            "framework-consumer", "ccu-framework-consumer-runtime",
             sha256_file(confd / "framework-consumer.yaml")),
     }
     return install_root, state_dir, owners
@@ -65,7 +65,7 @@ def seeded_install_root(project, tmp_path: Path):
 
 def _make_overlay(project, install_root, state_dir) -> ConfigOverlay:
     return ConfigOverlay(
-        platform="cgw-dev",
+        platform="ccu-dev",
         platform_rootfs=project.platform_configs_root(),
         install_root=install_root,
         deployment=project.load_config_deployment_manifest(),
@@ -90,11 +90,11 @@ class TestOverlayPipeline:
         # 3 files: common + 2 service configs
         assert len(report.overlaid) == 3
         # Service configs replaced with platform values
-        hello = (install_root / "etc/cgw/conf.d/cgw-hello-cli.yaml").read_text()
-        assert "cgw-dev" in hello
+        hello = (install_root / "etc/ccu/conf.d/ccu-hello-cli.yaml").read_text()
+        assert "ccu-dev" in hello
         # Pre/post source recorded
-        rec = next(r for r in report.overlaid if "cgw-hello-cli" in r.logical_path)
-        assert rec.pre_overlay_source == "cgw-hello-cli"
+        rec = next(r for r in report.overlaid if "ccu-hello-cli" in r.logical_path)
+        assert rec.pre_overlay_source == "ccu-hello-cli"
         assert rec.pre_overlay_sha256 != rec.final_sha256
 
     def test_all_validations_and_secret_scans_pass(self, project, seeded_install_root):
@@ -111,14 +111,14 @@ class TestOverlayPipeline:
         overlay = _make_overlay(project, install_root, state_dir)
         report = overlay.apply(owners)
         # Build a minimal artifact manifest and attach provenance
-        from cgw_build.manifest import PlatformManifest, SysrootManifest
+        from ccu_build.manifest import PlatformManifest, SysrootManifest
         am = ArtifactManifest(
-            platform="cgw-dev", profile="release",
-            platform_manifest=PlatformManifest(data={"platform": "cgw-dev"}),
+            platform="ccu-dev", profile="release",
+            platform_manifest=PlatformManifest(data={"platform": "ccu-dev"}),
             sysroot_manifest=SysrootManifest(data={"sysroot": {"id": "x"}}),
         )
-        from cgw_build.artifact import ArtifactEntry
-        from cgw_build.staging import StagedFile
+        from ccu_build.artifact import ArtifactEntry
+        from ccu_build.staging import StagedFile
         for path in sorted(install_root.rglob("*")):
             if not path.is_file():
                 continue
@@ -131,7 +131,7 @@ class TestOverlayPipeline:
                                install_component="config", staging="rootfs")
         am.attach_config_provenance(report)
         # common.yaml entry must have provenance
-        common_entry = next(e for e in am.entries if e.path == "rootfs/etc/cgw/common.yaml")
+        common_entry = next(e for e in am.entries if e.path == "rootfs/etc/ccu/common.yaml")
         assert common_entry.config_provenance is not None
         assert common_entry.config_provenance["owner"] == "build"
         assert common_entry.config_provenance["deploy_policy"] == "replace"
@@ -147,7 +147,7 @@ class TestOverlayPipeline:
         out = state_dir / "config-overlay-report.json"
         report.save(out)
         data = json.loads(out.read_text())
-        assert data["platform"] == "cgw-dev"
+        assert data["platform"] == "ccu-dev"
         assert len(data["overlaid"]) == 3
 
 
@@ -159,7 +159,7 @@ class TestOverlayPipeline:
 class TestDevFixturesNotInstalled:
     def test_dev_fixtures_exist_but_not_in_platform_rootfs(self, project):
         # Dev fixtures exist in service repos
-        assert (project.root / "examples/minimal/config/dev/cgw-hello-cli.yaml").is_file()
+        assert (project.root / "examples/minimal/config/dev/ccu-hello-cli.yaml").is_file()
         assert (project.root / "examples/minimal/config/dev/common.yaml").is_file()
         # Platform rootfs does NOT contain dev fixtures
         rootfs = project.platform_configs_root()
@@ -186,7 +186,7 @@ class TestCommonBuildOnlySource:
         overlay = _make_overlay(project, install_root, state_dir)
         report = overlay.apply(owners)
         common_rec = next(
-            r for r in report.overlaid if r.logical_path == "/etc/cgw/common.yaml")
+            r for r in report.overlaid if r.logical_path == "/etc/ccu/common.yaml")
         assert common_rec.owner == "build"
         assert common_rec.pre_overlay_source == "(none)"
 
@@ -195,7 +195,7 @@ class TestCommonBuildOnlySource:
         overlay = _make_overlay(project, install_root, state_dir)
         report = overlay.apply(owners)
         for r in report.overlaid:
-            if r.logical_path != "/etc/cgw/common.yaml":
+            if r.logical_path != "/etc/ccu/common.yaml":
                 assert r.validation["status"] == "pass", r.logical_path
 
 
@@ -223,31 +223,31 @@ class TestCleanIncrementalConsistency:
 class TestDeployPlan:
     def _make_payload(self, tmp_path: Path) -> Path:
         payload = tmp_path / "install-root"
-        cgw = payload / "etc/cgw"
-        (cgw / "conf.d").mkdir(parents=True)
-        (cgw / "credentials").mkdir(parents=True)
-        (cgw / "common.yaml").write_text("log_level: info\n")
-        (cgw / "conf.d/cgw-hello-cli.yaml").write_text("service_name: x\n")
-        (cgw / "credentials/device.crt").write_text("FAKE\n")
+        ccu = payload / "etc/ccu"
+        (ccu / "conf.d").mkdir(parents=True)
+        (ccu / "credentials").mkdir(parents=True)
+        (ccu / "common.yaml").write_text("log_level: info\n")
+        (ccu / "conf.d/ccu-hello-cli.yaml").write_text("service_name: x\n")
+        (ccu / "credentials/device.crt").write_text("FAKE\n")
         return payload
 
     def test_replace_preserve_classification(self, project, tmp_path: Path):
         payload = self._make_payload(tmp_path)
-        d = Deployer(project, platform="cgw-dev")
+        d = Deployer(project, platform="ccu-dev")
         plan = d.build_deploy_plan(payload)
         assert plan["summary"]["replace"] == 2  # common + conf.d
         assert plan["summary"]["preserve"] == 1  # credentials
 
     def test_provisioning_excluded(self, project, tmp_path: Path):
         payload = self._make_payload(tmp_path)
-        d = Deployer(project, platform="cgw-dev")
+        d = Deployer(project, platform="ccu-dev")
         plan = d.build_deploy_plan(payload)
         assert len(plan["excluded_provisioning"]) == 1
-        assert plan["excluded_provisioning"][0]["path"] == "/etc/cgw/credentials/device.crt"
+        assert plan["excluded_provisioning"][0]["path"] == "/etc/ccu/credentials/device.crt"
 
     def test_backup_command_excludes_provisioning(self, project, tmp_path: Path):
         payload = self._make_payload(tmp_path)
-        d = Deployer(project, platform="cgw-dev")
+        d = Deployer(project, platform="ccu-dev")
         steps = d.build_plan(payload)
         backup = next(s for s in steps if s.name == "backup")
         cmd = backup.commands[0]
@@ -262,19 +262,19 @@ class TestDeployPlan:
 class TestDeployDryRun:
     def test_dry_run_report_has_deploy_plan(self, project, tmp_path: Path):
         # Build a minimal package with config files
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         staging.prepare()
-        cgw = staging.install_root / "etc/cgw"
-        (cgw / "conf.d").mkdir(parents=True)
-        (cgw / "common.yaml").write_text("log_level: info\n")
-        (cgw / "conf.d/cgw-hello-cli.yaml").write_text("service_name: x\n")
+        ccu = staging.install_root / "etc/ccu"
+        (ccu / "conf.d").mkdir(parents=True)
+        (ccu / "common.yaml").write_text("log_level: info\n")
+        (ccu / "conf.d/ccu-hello-cli.yaml").write_text("service_name: x\n")
         # Minimal artifact manifest
         am_path = staging.manifests_dir / "artifact-manifest.json"
-        am_path.write_text(json.dumps({"artifacts": [], "platform": "cgw-dev"}))
+        am_path.write_text(json.dumps({"artifacts": [], "platform": "ccu-dev"}))
         packager = Packager(staging)
-        pkg = packager.create_package(name="cgw-test", version="0.1.0",
+        pkg = packager.create_package(name="ccu-test", version="0.1.0",
                                       git_commit=get_git_commit(project.root))
-        d = Deployer(project, platform="cgw-dev")
+        d = Deployer(project, platform="ccu-dev")
         report = d.deploy(pkg, execute=False)
         assert "deploy_plan" in report.to_dict()
         assert report.deploy_plan["summary"]["replace"] >= 1
@@ -290,10 +290,10 @@ class TestConsistentRollback:
     def test_backup_and_rollback_in_plan(self, project, tmp_path: Path):
         payload = tmp_path / "install-root"
         (payload / "usr/bin").mkdir(parents=True)
-        (payload / "etc/cgw/conf.d").mkdir(parents=True)
+        (payload / "etc/ccu/conf.d").mkdir(parents=True)
         (payload / "usr/bin/svc").write_text("bin")
-        (payload / "etc/cgw/conf.d/svc.yaml").write_text("a: 1\n")
-        d = Deployer(project, platform="cgw-dev")
+        (payload / "etc/ccu/conf.d/svc.yaml").write_text("a: 1\n")
+        d = Deployer(project, platform="ccu-dev")
         steps = d.build_plan(payload)
         names = [s.name for s in steps]
         # Consistent release-set: backup covers binaries + replace configs;
@@ -309,7 +309,7 @@ class TestConsistentRollback:
         payload = tmp_path / "install-root"
         (payload / "usr/bin").mkdir(parents=True)
         (payload / "usr/bin/svc").write_text("bin")
-        d = Deployer(project, platform="cgw-dev", rollback_on_failure=True)
+        d = Deployer(project, platform="ccu-dev", rollback_on_failure=True)
         # _rollback restores from the backup archive wholesale
         step = d._rollback()
         assert "tar -C / -xzf" in step.commands[0]

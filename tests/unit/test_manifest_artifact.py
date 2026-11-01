@@ -7,22 +7,22 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.artifact import ArtifactManifest, ArtifactEntry, get_git_commit
-from cgw_build.errors import PathConflictError
-from cgw_build.manifest import PlatformManifest, SysrootManifest, DependencyLock
-from cgw_build.staging import StagedFile
+from ccu_build.artifact import ArtifactManifest, ArtifactEntry, get_git_commit
+from ccu_build.errors import PathConflictError
+from ccu_build.manifest import PlatformManifest, SysrootManifest, DependencyLock
+from ccu_build.staging import StagedFile
 
 
-def _make_manifest(platform: str = "cgw-dev") -> ArtifactManifest:
+def _make_manifest(platform: str = "ccu-dev") -> ArtifactManifest:
     pm = PlatformManifest(data={
         "platform": platform,
         "version": "0.1.0-draft",
         "architecture": "TBD",
-        "sysroot": {"id": "cgw-dev-sysroot"},
+        "sysroot": {"id": "ccu-dev-sysroot"},
         "toolchain": {"target_triple": "TBD"},
     })
     sm = SysrootManifest(data={
-        "sysroot": {"id": "cgw-dev-sysroot", "digest": "TBD", "import_status": "pending"},
+        "sysroot": {"id": "ccu-dev-sysroot", "digest": "TBD", "import_status": "pending"},
     })
     return ArtifactManifest(
         platform=platform,
@@ -65,7 +65,7 @@ class TestArtifactManifest:
         )
         manifest.add_entry(entry)
         d = manifest.to_dict()
-        assert d["platform"] == "cgw-dev"
+        assert d["platform"] == "ccu-dev"
         assert d["profile"] == "release"
         assert d["artifact_count"] == 1
         assert len(d["artifacts"]) == 1
@@ -141,13 +141,13 @@ class TestArtifactManifest:
     def test_platform_manifest_summary(self):
         manifest = _make_manifest()
         d = manifest.to_dict()
-        assert d["platform_manifest"]["platform"] == "cgw-dev"
+        assert d["platform_manifest"]["platform"] == "ccu-dev"
         assert d["platform_manifest"]["version"] == "0.1.0-draft"
-        assert d["sysroot"]["id"] == "cgw-dev-sysroot"
+        assert d["sysroot"]["id"] == "ccu-dev-sysroot"
         assert d["sysroot"]["import_status"] == "pending"
 
     def test_sdk_consumers_evidence(self):
-        """CGW-BUILD-DSN-CR-002 §8.6: consumer evidence in artifact manifest."""
+        """CCU-BUILD-DSN-CR-002 §8.6: consumer evidence in artifact manifest."""
         manifest = _make_manifest()
         manifest.sdk_consumers = {"framework": ["framework-consumer"]}
         d = manifest.to_dict()

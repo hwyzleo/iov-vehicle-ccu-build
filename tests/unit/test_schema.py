@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.errors import SchemaValidationError
-from cgw_build.schema import (
+from ccu_build.errors import SchemaValidationError
+from ccu_build.schema import (
     validate_service_manifest,
     validate_release_set_manifest,
     validate_dependency_lock,
@@ -18,7 +18,7 @@ from cgw_build.schema import (
 
 class TestServiceSchema:
     def test_valid_service_manifest(self, project_root: Path):
-        from cgw_build.manifest import load_yaml
+        from ccu_build.manifest import load_yaml
         data = load_yaml(project_root / "manifests" / "services.yaml")
         validate_service_manifest(data, project_root)
 
@@ -26,7 +26,7 @@ class TestServiceSchema:
         data = {
             "services": {
                 "svc-a": {
-                    "build": {"target": "a", "preset": "cgw-dev-release"},
+                    "build": {"target": "a", "preset": "ccu-dev-release"},
                 }
             }
         }
@@ -49,7 +49,7 @@ class TestServiceSchema:
             "services": {
                 "svc-a": {
                     "repository": ".",
-                    "build": {"preset": "cgw-dev-release"},
+                    "build": {"preset": "ccu-dev-release"},
                 }
             }
         }
@@ -61,7 +61,7 @@ class TestServiceSchema:
             "services": {
                 "svc-a": {
                     "repository": ".",
-                    "build": {"target": "a", "preset": "cgw-dev-release"},
+                    "build": {"target": "a", "preset": "ccu-dev-release"},
                     "unknown_field": "bad",
                 }
             }
@@ -79,7 +79,7 @@ class TestServiceSchema:
             "services": {
                 "ServiceA": {
                     "repository": ".",
-                    "build": {"target": "a", "preset": "cgw-dev-release"},
+                    "build": {"target": "a", "preset": "ccu-dev-release"},
                 }
             }
         }
@@ -94,7 +94,7 @@ class TestServiceSchema:
                     "build": {
                         "target": "a",
                         "targets": ["a"],
-                        "preset": "cgw-dev-release",
+                        "preset": "ccu-dev-release",
                     },
                 }
             }
@@ -107,11 +107,11 @@ class TestServiceSchema:
             "services": {
                 "svc-a": {
                     "repository": ".",
-                    "build": {"target": "a", "preset": "cgw-dev-release"},
+                    "build": {"target": "a", "preset": "ccu-dev-release"},
                     "runtime": {
                         "systemd_units": ["svc-a.service"],
                         "after": ["network.target"],
-                        "config_paths": ["/etc/cgw/svc-a"],
+                        "config_paths": ["/etc/ccu/svc-a"],
                     },
                 }
             }
@@ -121,7 +121,7 @@ class TestServiceSchema:
 
 class TestReleaseSetSchema:
     def test_valid_release_set(self, project_root: Path):
-        from cgw_build.manifest import load_yaml
+        from ccu_build.manifest import load_yaml
         data = load_yaml(project_root / "manifests" / "release-sets.yaml")
         validate_release_set_manifest(data, project_root)
 
@@ -150,7 +150,7 @@ class TestReleaseSetSchema:
 
 class TestDependencyLockSchema:
     def test_valid_empty_lock(self, project_root: Path):
-        from cgw_build.manifest import load_yaml
+        from ccu_build.manifest import load_yaml
         data = load_yaml(project_root / "manifests" / "dependency-lock.yaml")
         validate_dependency_lock(data, project_root)
 
@@ -188,8 +188,8 @@ class TestDependencyLockSchema:
 
 class TestPlatformSchema:
     def test_valid_platform_manifest(self, project_root: Path):
-        from cgw_build.manifest import load_yaml
-        data = load_yaml(project_root / "manifests" / "platforms" / "cgw-dev.yaml")
+        from ccu_build.manifest import load_yaml
+        data = load_yaml(project_root / "manifests" / "platforms" / "ccu-dev.yaml")
         validate_platform_manifest(data, project_root)
 
     def test_missing_platform(self, project_root: Path):
@@ -211,17 +211,17 @@ class TestPlatformSchema:
 class TestSchemaLoading:
     def test_load_service_schema(self, project_root: Path):
         schema = load_schema("service", project_root)
-        assert schema["title"] == "CGW Build Service Manifest"
+        assert schema["title"] == "CCU Build Service Manifest"
         assert "services" in schema["properties"]
 
     def test_load_release_set_schema(self, project_root: Path):
         schema = load_schema("release-set", project_root)
-        assert schema["title"] == "CGW Build Release Set Manifest"
+        assert schema["title"] == "CCU Build Release Set Manifest"
 
     def test_load_lock_schema(self, project_root: Path):
         schema = load_schema("lock", project_root)
-        assert schema["title"] == "CGW Build Dependency Lock"
+        assert schema["title"] == "CCU Build Dependency Lock"
 
     def test_load_platform_schema(self, project_root: Path):
         schema = load_schema("platform", project_root)
-        assert schema["title"] == "CGW Build Platform Manifest"
+        assert schema["title"] == "CCU Build Platform Manifest"

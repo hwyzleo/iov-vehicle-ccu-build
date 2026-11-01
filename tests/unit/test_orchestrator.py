@@ -1,6 +1,6 @@
 """Unit tests for BuildOrchestrator configure-command and TARGET dep preparation.
 
-CGW-BUILD-DSN-CR-002 §4/§8.4: HOST self-verification find-root injection.
+CCU-BUILD-DSN-CR-002 §4/§8.4: HOST self-verification find-root injection.
 """
 
 from __future__ import annotations
@@ -9,20 +9,20 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.errors import BuildFailure
-from cgw_build.graph import DependencyGraph
-from cgw_build.manifest import Project
-from cgw_build.orchestrator import BuildConfig, BuildOrchestrator
-from cgw_build.staging import StagingDir
+from ccu_build.errors import BuildFailure
+from ccu_build.graph import DependencyGraph
+from ccu_build.manifest import Project
+from ccu_build.orchestrator import BuildConfig, BuildOrchestrator
+from ccu_build.staging import StagingDir
 
 
 def _service(project_root: Path, sid: str):
-    project = Project(project_root, platform="cgw-dev")
+    project = Project(project_root, platform="ccu-dev")
     return project.load_service_manifest().get(sid)
 
 
 def _graph(project_root: Path) -> DependencyGraph:
-    project = Project(project_root, platform="cgw-dev")
+    project = Project(project_root, platform="ccu-dev")
     manifest = project.load_service_manifest()
     lock = project.load_dependency_lock()
     return DependencyGraph(manifest, lock)
@@ -65,14 +65,14 @@ class TestHostConfigureInjection:
             Project(project_root, platform="host"),
             BuildConfig(platform="host", profile="release"),
         )
-        cmd = orch._configure_cmd(_service(project_root, "cgw-hello-lib"))
+        cmd = orch._configure_cmd(_service(project_root, "ccu-hello-lib"))
         assert not any(c.startswith("-DCMAKE_PREFIX_PATH=") for c in cmd)
         assert not any("CMAKE_FIND_ROOT_PATH_MODE" in c for c in cmd)
 
     def test_target_uses_toolchain_not_prefix_path(self, project_root: Path):
         orch = BuildOrchestrator(
-            Project(project_root, platform="cgw-dev"),
-            BuildConfig(platform="cgw-dev", profile="release"),
+            Project(project_root, platform="ccu-dev"),
+            BuildConfig(platform="ccu-dev", profile="release"),
         )
         cmd = orch._configure_cmd(_service(project_root, "framework"))
         assert any("CMAKE_TOOLCHAIN_FILE" in c for c in cmd)
@@ -85,7 +85,7 @@ class TestHostConfigureInjection:
             BuildConfig(platform="host", profile="release"),
         )
         env = orch._cmake_env()
-        assert env["CGW_DEP_STAGING"] == str(orch.staging.dep_staging)
+        assert env["CCU_DEP_STAGING"] == str(orch.staging.dep_staging)
 
 
 class TestTargetDependencyPreparation:
@@ -107,5 +107,5 @@ class TestTargetDependencyPreparation:
         # Point staging at an empty tmp tree: no deps staged.
         orch.staging = StagingDir(tmp_path, "host", "release")
         orch.staging.prepare(clean=True)
-        with pytest.raises(BuildFailure, match="CGW_DEP_STAGING"):
+        with pytest.raises(BuildFailure, match="CCU_DEP_STAGING"):
             orch._prepare_target_dependencies(_graph(project_root), ["framework"])

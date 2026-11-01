@@ -1,8 +1,8 @@
 #!/bin/bash
-# CGW Framework Consumer health check script (CR-002 self-verification).
+# CCU Framework Consumer health check script (CR-002 self-verification).
 # Exit 0 if the service binary exists and is executable.
 set -euo pipefail
-BIN="/usr/bin/cgw-framework-consumer"
+BIN="/usr/bin/ccu-framework-consumer"
 if [ -x "$BIN" ]; then
     echo "OK: $BIN is executable"
     exit 0

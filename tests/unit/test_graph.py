@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.errors import CycleError, DependencyError
-from cgw_build.graph import DependencyGraph
-from cgw_build.manifest import Service, ServiceManifest, BuildConfig, DependencyLock
+from ccu_build.errors import CycleError, DependencyError
+from ccu_build.graph import DependencyGraph
+from ccu_build.manifest import Service, ServiceManifest, BuildConfig, DependencyLock
 
 
 def _make_service(sid: str, deps: list[str] | None = None,
@@ -59,20 +59,20 @@ class TestTopologicalSort:
         assert closure == {"a", "b", "c"}
 
     def test_build_order_with_release_set(self, project_root: Path):
-        from cgw_build.manifest import Project
-        project = Project(project_root, platform="cgw-dev")
+        from ccu_build.manifest import Project
+        project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
         lock = project.load_dependency_lock()
         graph = DependencyGraph(manifest, lock)
         order = graph.build_order()
         assert len(order) == 4
-        assert order.index("cgw-hello-lib") < order.index("cgw-hello-cli")
+        assert order.index("ccu-hello-lib") < order.index("ccu-hello-cli")
         assert order.index("framework") < order.index("framework-consumer")
 
     def test_framework_release_set_order(self, project_root: Path):
-        """CGW-BUILD-DSN-CR-002: framework builds before its consumer."""
-        from cgw_build.manifest import Project
-        project = Project(project_root, platform="cgw-dev")
+        """CCU-BUILD-DSN-CR-002: framework builds before its consumer."""
+        from ccu_build.manifest import Project
+        project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
         lock = project.load_dependency_lock()
         graph = DependencyGraph(manifest, lock)

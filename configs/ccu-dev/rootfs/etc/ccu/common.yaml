@@ -1,0 +1,5 @@
+# CCU platform common configuration (设计 §9.2/§9.4).
+# Sole formal source of /etc/ccu/common.yaml (REQ-004). Non-secret release
+# values for the ccu-dev platform. Whole-file override; no implicit deep
+# merge with service defaults (§9.8).
+log_level: info

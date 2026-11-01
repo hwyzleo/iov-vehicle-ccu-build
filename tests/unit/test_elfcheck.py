@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.elfcheck import (
+from ccu_build.elfcheck import (
     parse_elf,
     classify_file,
     check_file,

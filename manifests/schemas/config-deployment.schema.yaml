@@ -1,7 +1,7 @@
-# JSON Schema (Draft-07) for CGW Build Config Deployment Manifest
+# JSON Schema (Draft-07) for CCU Build Config Deployment Manifest
 # Validates manifests/config-deployment.yaml
 #
-# CR: CGW-BUILD-DSN-CR-003 §9.4 部署策略清单
+# CR: CCU-BUILD-DSN-CR-003 §9.4 部署策略清单
 #
 # 字段策略：
 #   - deploy_policy 枚举为 replace|preserve|create_if_missing。
@@ -9,7 +9,7 @@
 #     不一致时由 BUILD 校验失败（§9.4）。
 #   - device-managed 文件不得使用 replace（由 BUILD 交叉校验保证）。
 $schema: "http://json-schema.org/draft-07/schema#"
-title: CGW Build Config Deployment Manifest
+title: CCU Build Config Deployment Manifest
 type: object
 required:
   - version

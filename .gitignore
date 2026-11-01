@@ -43,6 +43,7 @@
 build/
 Build/
 build-*/
+cmake-build-*/
 
 # CMake generated files
 CMakeFiles/
@@ -68,7 +69,7 @@ vcpkg_installed/
 Testing/
 .cache/
 
-# CGW Build output
+# CCU Build output
 out/
 sysroots/
 dependencies/cache/

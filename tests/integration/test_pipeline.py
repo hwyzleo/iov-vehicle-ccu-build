@@ -1,4 +1,4 @@
-"""Integration tests for CGW Build pipeline.
+"""Integration tests for CCU Build pipeline.
 
 These tests verify the end-to-end flow:
   * Manifest parsing, schema validation and dependency ordering
@@ -13,27 +13,27 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.manifest import Project
-from cgw_build.schema import (
+from ccu_build.manifest import Project
+from ccu_build.schema import (
     validate_service_manifest,
     validate_release_set_manifest,
     validate_dependency_lock,
     validate_platform_manifest,
 )
-from cgw_build.validator import validate_all
-from cgw_build.graph import DependencyGraph
-from cgw_build.orchestrator import BuildOrchestrator, BuildConfig
-from cgw_build.staging import StagingDir
+from ccu_build.validator import validate_all
+from ccu_build.graph import DependencyGraph
+from ccu_build.orchestrator import BuildOrchestrator, BuildConfig
+from ccu_build.staging import StagingDir
 
 
 class TestEndToEndValidation:
     """End-to-end manifest validation flow."""
 
     def test_full_validation_pipeline(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
 
         # 1. Platform manifest schema validation
-        from cgw_build.manifest import load_yaml
+        from ccu_build.manifest import load_yaml
         pm_data = load_yaml(project.platform_manifest_path)
         validate_platform_manifest(pm_data, project_root)
 
@@ -61,28 +61,28 @@ class TestEndToEndValidation:
         graph = DependencyGraph(service_manifest, lock)
         order = graph.build_order()
         assert len(order) == 4
-        assert order.index("cgw-hello-lib") < order.index("cgw-hello-cli")
+        assert order.index("ccu-hello-lib") < order.index("ccu-hello-cli")
         assert order.index("framework") < order.index("framework-consumer")
 
         # 8. Release set closure
-        rs = release_set_manifest.get("cgw-dev-minimal")
+        rs = release_set_manifest.get("ccu-dev-minimal")
         assert rs is not None
         closure = graph.closure(rs.services)
-        assert closure == {"cgw-hello-lib", "cgw-hello-cli"}
-        fw_rs = release_set_manifest.get("cgw-dev-framework")
+        assert closure == {"ccu-hello-lib", "ccu-hello-cli"}
+        fw_rs = release_set_manifest.get("ccu-dev-framework")
         assert fw_rs is not None
         assert graph.closure(fw_rs.services) == {"framework", "framework-consumer"}
         assert graph.target_dependency_order(fw_rs.services) == ["yaml-cpp"]
 
     def test_platform_manifest_has_tbd_items(self, project_root: Path):
         """Platform manifest must have TBD items with closing gates (设计 §3)."""
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         pm = project.load_platform_manifest()
         assert pm.has_tbd is True  # TBD items present before platform confirmation
 
     def test_sysroot_manifest_pending(self, project_root: Path):
         """Sysroot manifest must be in pending state before import."""
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         sm = project.load_sysroot_manifest()
         assert sm.import_status == "pending"
 
@@ -91,20 +91,20 @@ class TestDryRunBuild:
     """Dry-run build plan generation (no actual compilation)."""
 
     def test_dry_run_build_plan(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         config = BuildConfig(
-            platform="cgw-dev",
+            platform="ccu-dev",
             profile="release",
             dry_run=True,
         )
         orch = BuildOrchestrator(project, config)
-        report = orch.build(set_id="cgw-dev-minimal")
+        report = orch.build(set_id="ccu-dev-minimal")
 
         # In dry-run, steps are "skipped" but order is determined
         assert report.status == "success"
         assert len(report.service_results) == 2
-        assert report.service_results[0].id == "cgw-hello-lib"
-        assert report.service_results[1].id == "cgw-hello-cli"
+        assert report.service_results[0].id == "ccu-hello-lib"
+        assert report.service_results[1].id == "ccu-hello-cli"
         for sr in report.service_results:
             assert sr.steps.get("configure") == "skipped"
             assert sr.steps.get("build") == "skipped"
@@ -112,23 +112,23 @@ class TestDryRunBuild:
             assert install_steps and all(s == "skipped" for s in install_steps)
 
     def test_dry_run_single_service(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
-        config = BuildConfig(platform="cgw-dev", profile="release", dry_run=True)
+        project = Project(project_root, platform="ccu-dev")
+        config = BuildConfig(platform="ccu-dev", profile="release", dry_run=True)
         orch = BuildOrchestrator(project, config)
-        report = orch.build(service_id="cgw-hello-cli")
+        report = orch.build(service_id="ccu-hello-cli")
 
         # Should include both the dependency and the service
         assert report.status == "success"
         assert len(report.service_results) == 2
         ids = [sr.id for sr in report.service_results]
-        assert "cgw-hello-lib" in ids
-        assert "cgw-hello-cli" in ids
+        assert "ccu-hello-lib" in ids
+        assert "ccu-hello-cli" in ids
 
     def test_dry_run_build_report_saved(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
-        config = BuildConfig(platform="cgw-dev", profile="release", dry_run=True)
+        project = Project(project_root, platform="ccu-dev")
+        config = BuildConfig(platform="ccu-dev", profile="release", dry_run=True)
         orch = BuildOrchestrator(project, config)
-        report = orch.build(set_id="cgw-dev-minimal")
+        report = orch.build(set_id="ccu-dev-minimal")
 
         # Build report should be saved
         report_path = orch.staging.manifests_dir / "build-report.json"
@@ -136,15 +136,15 @@ class TestDryRunBuild:
         with open(report_path) as f:
             saved = json.load(f)
         assert saved["status"] == "success"
-        assert saved["release_set"] == "cgw-dev-minimal"
+        assert saved["release_set"] == "ccu-dev-minimal"
 
     def test_dry_run_build_report_structure(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
-        config = BuildConfig(platform="cgw-dev", profile="release", dry_run=True)
+        project = Project(project_root, platform="ccu-dev")
+        config = BuildConfig(platform="ccu-dev", profile="release", dry_run=True)
         orch = BuildOrchestrator(project, config)
-        report = orch.build(set_id="cgw-dev-minimal")
+        report = orch.build(set_id="ccu-dev-minimal")
 
-        assert report.platform == "cgw-dev"
+        assert report.platform == "ccu-dev"
         assert report.profile == "release"
         assert report.duration_seconds >= 0
         assert len(report.service_results) == 2
@@ -153,29 +153,29 @@ class TestDryRunBuild:
 
     def test_dry_run_target_dependencies_empty(self, project_root: Path):
         """No TARGET dependencies in the minimal example (CR-001)."""
-        project = Project(project_root, platform="cgw-dev")
-        config = BuildConfig(platform="cgw-dev", profile="release", dry_run=True)
+        project = Project(project_root, platform="ccu-dev")
+        config = BuildConfig(platform="ccu-dev", profile="release", dry_run=True)
         orch = BuildOrchestrator(project, config)
-        report = orch.build(set_id="cgw-dev-minimal")
+        report = orch.build(set_id="ccu-dev-minimal")
 
         assert report.target_dependencies == []
 
     def test_dry_run_host_build(self, project_root: Path):
         """Host platform dry-run build (native, no cross-compile)."""
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         config = BuildConfig(platform="host", profile="release", dry_run=True)
         orch = BuildOrchestrator(project, config)
-        report = orch.build(set_id="cgw-dev-minimal")
+        report = orch.build(set_id="ccu-dev-minimal")
 
         assert report.status == "success"
         assert report.platform == "host"
 
     def test_dry_run_framework_set(self, project_root: Path):
-        """CGW-BUILD-DSN-CR-002: dry-run build of the framework release set."""
-        project = Project(project_root, platform="cgw-dev")
-        config = BuildConfig(platform="cgw-dev", profile="release", dry_run=True)
+        """CCU-BUILD-DSN-CR-002: dry-run build of the framework release set."""
+        project = Project(project_root, platform="ccu-dev")
+        config = BuildConfig(platform="ccu-dev", profile="release", dry_run=True)
         orch = BuildOrchestrator(project, config)
-        report = orch.build(set_id="cgw-dev-framework")
+        report = orch.build(set_id="ccu-dev-framework")
 
         assert report.status == "success"
         ids = [r.id for r in report.service_results]
@@ -184,17 +184,17 @@ class TestDryRunBuild:
         assert report.target_dependencies == ["yaml-cpp"]
         # framework install components recorded (sdk + runtime)
         fw = report.service_results[0]
-        assert {c.name for c in fw.components} == {"cgw-framework-sdk", "cgw-framework-runtime"}
+        assert {c.name for c in fw.components} == {"ccu-framework-sdk", "ccu-framework-runtime"}
 
 
 class TestDryRunPackage:
     """Dry-run packaging (staging exists from dry-run build)."""
 
     def test_dry_run_build_creates_staging(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
-        config = BuildConfig(platform="cgw-dev", profile="release", dry_run=True)
+        project = Project(project_root, platform="ccu-dev")
+        config = BuildConfig(platform="ccu-dev", profile="release", dry_run=True)
         orch = BuildOrchestrator(project, config)
-        orch.build(set_id="cgw-dev-minimal")
+        orch.build(set_id="ccu-dev-minimal")
 
         # Staging directories should exist
         assert orch.staging.root.exists()
@@ -206,12 +206,12 @@ class TestELFCheck:
     """ELF checking with test fixtures."""
 
     def test_aarch64_elf_passes_check(self, minimal_aarch64_elf: Path):
-        from cgw_build.elfcheck import check_file, EM_AARCH64
+        from ccu_build.elfcheck import check_file, EM_AARCH64
         result = check_file(minimal_aarch64_elf, expected_machine=EM_AARCH64)
         assert len(result.violations) == 0
 
     def test_macho_detected_as_violation(self, macho_binary: Path):
-        from cgw_build.elfcheck import check_file, EM_AARCH64
+        from ccu_build.elfcheck import check_file, EM_AARCH64
         result = check_file(macho_binary, expected_machine=EM_AARCH64)
         assert len(result.violations) > 0
 
@@ -220,7 +220,7 @@ class TestELFCheck:
         minimal_aarch64_elf: Path,
         macho_binary: Path,
     ):
-        from cgw_build.elfcheck import check_staging, EM_AARCH64
+        from ccu_build.elfcheck import check_staging, EM_AARCH64
         staging = tmp_path / "staging"
         staging.mkdir()
         (staging / "good.bin").write_bytes(minimal_aarch64_elf.read_bytes())

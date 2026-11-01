@@ -1,17 +1,17 @@
-# ci/Dockerfile - CGW Build container for cross-compilation
+# ci/Dockerfile - CCU Build container for cross-compilation
 #
-# CR: CGW-BUILD-DSN-CR-001
+# CR: CCU-BUILD-DSN-CR-001
 #
 # Provides a reproducible build environment. Base OS, compiler version and
 # architecture are TBD per platform manifest (build_environment section);
 # they must be confirmed and locked before the first releasable build.
 #
 # Build:
-#   docker build -t cgw-build:0.1-draft -f ci/Dockerfile .
+#   docker build -t ccu-build:0.1-draft -f ci/Dockerfile .
 #
 # Run:
-#   docker run --rm -v "$PWD":/workspace -e CGW_ROOT=/workspace \
-#     cgw-build:0.1-draft python3 -m cgw_build build --set cgw-dev-minimal
+#   docker run --rm -v "$PWD":/workspace -e CCU_ROOT=/workspace \
+#     ccu-build:0.1-draft python3 -m ccu_build build --set ccu-dev-minimal
 
 # Base image: TBD - must be confirmed per platform manifest.
 # Placeholder: Ubuntu 20.04 (linux/arm64). Replace with confirmed image+digest.
@@ -48,7 +48,7 @@ RUN dpkg -l > /tmp/installed-packages.txt && \
     ninja --version >> /tmp/toolchain-version.txt
 
 # Set up workspace
-ENV CGW_ROOT=/workspace
+ENV CCU_ROOT=/workspace
 WORKDIR /workspace
 
 CMD ["bash"]

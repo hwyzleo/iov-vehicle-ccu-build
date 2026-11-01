@@ -2,12 +2,12 @@
 
 #include <sstream>
 
-namespace cgw {
+namespace ccu {
 
 std::string greet(const std::string &name) {
     std::ostringstream oss;
-    oss << "CGW-Hello, " << name << "!";
+    oss << "CCU-Hello, " << name << "!";
     return oss.str();
 }
 
-}  // namespace cgw
+}  // namespace ccu

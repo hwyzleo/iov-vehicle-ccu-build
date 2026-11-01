@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.errors import ManifestError, SchemaValidationError
-from cgw_build.manifest import (
+from ccu_build.errors import ManifestError, SchemaValidationError
+from ccu_build.manifest import (
     Project,
     Service,
     ServiceManifest,
@@ -23,8 +23,8 @@ from cgw_build.manifest import (
 
 class TestProjectLayout:
     def test_project_root_validation(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
-        assert project.platform == "cgw-dev"
+        project = Project(project_root, platform="ccu-dev")
+        assert project.platform == "ccu-dev"
         assert project.platform_manifest_path.is_file()
 
     def test_unknown_platform_rejected(self, project_root: Path):
@@ -32,93 +32,93 @@ class TestProjectLayout:
             Project(project_root, platform="nonexistent")
 
     def test_available_platforms(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         platforms = project.available_platforms()
-        assert "cgw-dev" in platforms
+        assert "ccu-dev" in platforms
 
     def test_platform_manifest_path(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
-        assert project.platform_manifest_path == project_root / "manifests" / "platforms" / "cgw-dev.yaml"
+        project = Project(project_root, platform="ccu-dev")
+        assert project.platform_manifest_path == project_root / "manifests" / "platforms" / "ccu-dev.yaml"
 
     def test_sysroot_manifest_path(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
-        assert project.sysroot_manifest_path == project_root / "manifests" / "platforms" / "cgw-dev-sysroot.yaml"
+        project = Project(project_root, platform="ccu-dev")
+        assert project.sysroot_manifest_path == project_root / "manifests" / "platforms" / "ccu-dev-sysroot.yaml"
 
     def test_dependency_lock_path(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         assert project.dependency_lock_path == project_root / "manifests" / "dependency-lock.yaml"
 
     def test_toolchain_file_path(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
-        assert project.toolchain_file_path == project_root / "cmake" / "toolchains" / "cgw-target.cmake"
+        project = Project(project_root, platform="ccu-dev")
+        assert project.toolchain_file_path == project_root / "cmake" / "toolchains" / "ccu-target.cmake"
 
 
 class TestPlatformManifest:
     def test_load_platform_manifest(self, project_root: Path):
-        pm = load_platform_manifest(project_root / "manifests" / "platforms" / "cgw-dev.yaml")
-        assert pm.platform == "cgw-dev"
+        pm = load_platform_manifest(project_root / "manifests" / "platforms" / "ccu-dev.yaml")
+        assert pm.platform == "ccu-dev"
         assert pm.version == "0.1.0-draft"
-        assert pm.sysroot_id == "cgw-dev-sysroot"
+        assert pm.sysroot_id == "ccu-dev-sysroot"
         assert pm.has_tbd is True  # TBD items present
 
     def test_platform_properties(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         pm = project.load_platform_manifest()
-        assert pm.platform == "cgw-dev"
-        assert pm.runtime_user == "cgw"
-        assert pm.persistent_state == "/var/lib/cgw"
+        assert pm.platform == "ccu-dev"
+        assert pm.runtime_user == "ccu"
+        assert pm.persistent_state == "/var/lib/ccu"
 
     def test_sysroot_manifest(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         sm = project.load_sysroot_manifest()
-        assert sm.id == "cgw-dev-sysroot"
+        assert sm.id == "ccu-dev-sysroot"
         assert sm.import_status == "pending"
 
 
 class TestServiceManifest:
     def test_load_service_manifest(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
         assert len(manifest) == 4
-        assert "cgw-hello-lib" in manifest
-        assert "cgw-hello-cli" in manifest
+        assert "ccu-hello-lib" in manifest
+        assert "ccu-hello-cli" in manifest
         assert "framework" in manifest
         assert "framework-consumer" in manifest
 
     def test_service_properties(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
-        lib = manifest.get("cgw-hello-lib")
+        lib = manifest.get("ccu-hello-lib")
         assert lib is not None
         assert lib.kind == "library"
         assert lib.is_library is True
-        assert lib.build.targets == ["cgw-hello-lib"]
+        assert lib.build.targets == ["ccu-hello-lib"]
         assert len(lib.build.install_components) == 1
-        assert lib.build.install_components[0].name == "cgw-hello-lib-runtime"
+        assert lib.build.install_components[0].name == "ccu-hello-lib-runtime"
         assert lib.build.install_components[0].staging == "rootfs"
 
     def test_cli_service_dependencies(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
-        cli = manifest.get("cgw-hello-cli")
+        cli = manifest.get("ccu-hello-cli")
         assert cli is not None
-        assert cli.build.service_dependencies == ["cgw-hello-lib"]
-        assert cli.runtime.systemd_units == ["cgw-hello.service"]
+        assert cli.build.service_dependencies == ["ccu-hello-lib"]
+        assert cli.runtime.systemd_units == ["ccu-hello.service"]
 
     def test_release_set_manifest(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         rs = project.load_release_set_manifest()
         assert len(rs) == 2
-        minimal = rs.get("cgw-dev-minimal")
+        minimal = rs.get("ccu-dev-minimal")
         assert minimal is not None
-        assert minimal.services == ["cgw-hello-lib", "cgw-hello-cli"]
-        framework = rs.get("cgw-dev-framework")
+        assert minimal.services == ["ccu-hello-lib", "ccu-hello-cli"]
+        framework = rs.get("ccu-dev-framework")
         assert framework is not None
         assert framework.services == ["framework", "framework-consumer"]
 
     def test_dependency_lock_yaml_cpp(self, project_root: Path):
-        """CGW-BUILD-DSN-CR-002: yaml-cpp is the framework's controlled TARGET dep."""
-        project = Project(project_root, platform="cgw-dev")
+        """CCU-BUILD-DSN-CR-002: yaml-cpp is the framework's controlled TARGET dep."""
+        project = Project(project_root, platform="ccu-dev")
         lock = project.load_dependency_lock()
         assert len(lock) == 1
         assert "yaml-cpp" in lock
@@ -132,42 +132,42 @@ class TestServiceManifest:
         assert dep.is_static is True
 
     def test_framework_service_metadata(self, project_root: Path):
-        """CGW-BUILD-DSN-CR-002 §1: framework library with five targets."""
-        project = Project(project_root, platform="cgw-dev")
+        """CCU-BUILD-DSN-CR-002 §1: framework library with five targets."""
+        project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
         fw = manifest.get("framework")
         assert fw is not None
         assert fw.kind == "library"
         assert fw.is_library is True
         assert fw.build.targets == [
-            "cgw-framework-config",
-            "cgw-framework-log",
-            "cgw-framework-store",
-            "cgw-framework-hash",
-            "cgw-framework-someip",
+            "ccu-framework-config",
+            "ccu-framework-log",
+            "ccu-framework-store",
+            "ccu-framework-hash",
+            "ccu-framework-someip",
         ]
         assert fw.build.service_dependencies == []
         assert fw.build.target_dependencies == ["yaml-cpp"]
         assert fw.runtime.systemd_units == []
         assert len(fw.build.install_components) == 2
         sdk = fw.build.install_components[0]
-        assert sdk.name == "cgw-framework-sdk"
+        assert sdk.name == "ccu-framework-sdk"
         assert sdk.staging == "sdk"
         rt = fw.build.install_components[1]
-        assert rt.name == "cgw-framework-runtime"
+        assert rt.name == "ccu-framework-runtime"
         assert rt.staging == "rootfs"
 
     def test_framework_consumer_service(self, project_root: Path):
-        """CGW-BUILD-DSN-CR-002 §5: consumer depends on framework + yaml-cpp."""
-        project = Project(project_root, platform="cgw-dev")
+        """CCU-BUILD-DSN-CR-002 §5: consumer depends on framework + yaml-cpp."""
+        project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
         consumer = manifest.get("framework-consumer")
         assert consumer is not None
         assert consumer.kind == "daemon"
         assert consumer.build.service_dependencies == ["framework"]
         assert consumer.build.target_dependencies == ["yaml-cpp"]
-        assert consumer.build.targets == ["cgw-framework-consumer"]
-        assert consumer.runtime.systemd_units == ["cgw-framework-consumer.service"]
+        assert consumer.build.targets == ["ccu-framework-consumer"]
+        assert consumer.runtime.systemd_units == ["ccu-framework-consumer.service"]
 
 
 class TestLegacyDependencyResolution:

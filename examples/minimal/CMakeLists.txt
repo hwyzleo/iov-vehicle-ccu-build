@@ -1,76 +1,76 @@
 # examples/minimal/CMakeLists.txt
-# Minimal example for CGW BUILD v0.1-draft self-verification.
+# Minimal example for CCU BUILD v0.1-draft self-verification.
 #
 # Defines two targets matching manifests/services.yaml:
-#   cgw-hello-lib  - shared library exporting greet()
-#   cgw-hello-cli  - executable consuming cgw-hello-lib
+#   ccu-hello-lib  - shared library exporting greet()
+#   ccu-hello-cli  - executable consuming ccu-hello-lib
 #
-# Both targets follow the CGW CMake 接入契约 (设计 §6):
+# Both targets follow the CCU CMake 接入契约 (设计 §6):
 #   * No compiler or sysroot overrides (toolchain/preset injects them)
 #   * GNUInstallDirs for standard directories
 #   * Named install components matching service manifest
 #   * DESTDIR staging support
 
 cmake_minimum_required(VERSION 3.16)
-project(cgw-hello VERSION 0.1.0 LANGUAGES C CXX)
+project(ccu-hello VERSION 0.1.0 LANGUAGES C CXX)
 
-# Locate CGW CMake modules
-if(DEFINED ENV{CGW_ROOT})
-    set(CGW_ROOT "$ENV{CGW_ROOT}")
-elseif(DEFINED CGW_ROOT)
+# Locate CCU CMake modules
+if(DEFINED ENV{CCU_ROOT})
+    set(CCU_ROOT "$ENV{CCU_ROOT}")
+elseif(DEFINED CCU_ROOT)
     # cache variable from preset
 else()
-    get_filename_component(CGW_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+    get_filename_component(CCU_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 endif()
-list(APPEND CMAKE_MODULE_PATH "${CGW_ROOT}/cmake/modules")
+list(APPEND CMAKE_MODULE_PATH "${CCU_ROOT}/cmake/modules")
 
 include(GNUInstallDirs)
-include(CgwInstall)
+include(CcuInstall)
 
 # ---------------------------------------------------------------------------
-# cgw-hello-lib: shared library
+# ccu-hello-lib: shared library
 # ---------------------------------------------------------------------------
-add_library(cgw-hello-lib SHARED
+add_library(ccu-hello-lib SHARED
     src/greet.cpp
 )
-target_include_directories(cgw-hello-lib PUBLIC
+target_include_directories(ccu-hello-lib PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cgw>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ccu>
 )
-set_target_properties(cgw-hello-lib PROPERTIES
+set_target_properties(ccu-hello-lib PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 0
     POSITION_INDEPENDENT_CODE ON
 )
 
 # ---------------------------------------------------------------------------
-# cgw-hello-cli: executable
+# ccu-hello-cli: executable
 # ---------------------------------------------------------------------------
-add_executable(cgw-hello-cli
+add_executable(ccu-hello-cli
     src/hello_cli.cpp
 )
-target_link_libraries(cgw-hello-cli PRIVATE cgw-hello-lib)
+target_link_libraries(ccu-hello-cli PRIVATE ccu-hello-lib)
 
 # ---------------------------------------------------------------------------
 # Install rules with components matching manifests/services.yaml
 # ---------------------------------------------------------------------------
-# Library: shared lib -> cgw-hello-lib-runtime
-#          headers    -> cgw-hello-lib-development
-cgw_install_target(cgw-hello-lib
-    RUNTIME_COMPONENT cgw-hello-lib-runtime
-    DEVELOPMENT_COMPONENT cgw-hello-lib-development
+# Library: shared lib -> ccu-hello-lib-runtime
+#          headers    -> ccu-hello-lib-development
+ccu_install_target(ccu-hello-lib
+    RUNTIME_COMPONENT ccu-hello-lib-runtime
+    DEVELOPMENT_COMPONENT ccu-hello-lib-development
 )
-cgw_install_header(src/greet.hpp .
-    COMPONENT cgw-hello-lib-development
+ccu_install_header(src/greet.hpp .
+    COMPONENT ccu-hello-lib-development
 )
 
-# CLI: executable + systemd unit + config -> cgw-hello-cli-runtime
-cgw_install_target(cgw-hello-cli
-    RUNTIME_COMPONENT cgw-hello-cli-runtime
+# CLI: executable + systemd unit + config -> ccu-hello-cli-runtime
+ccu_install_target(ccu-hello-cli
+    RUNTIME_COMPONENT ccu-hello-cli-runtime
 )
-cgw_install_systemd_unit(systemd/cgw-hello.service
-    COMPONENT cgw-hello-cli-runtime
+ccu_install_systemd_unit(systemd/ccu-hello.service
+    COMPONENT ccu-hello-cli-runtime
 )
-cgw_install_default_config(cgw-hello-cli config/cgw-hello-cli.default.yaml
-    COMPONENT cgw-hello-cli-runtime
+ccu_install_default_config(ccu-hello-cli config/ccu-hello-cli.default.yaml
+    COMPONENT ccu-hello-cli-runtime
 )

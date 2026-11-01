@@ -1,0 +1,24 @@
+# CCU Build Sysroot Manifest - ccu-dev-sysroot (骨架)
+#
+# CR: CCU-BUILD-DSN-CR-001
+#
+# 受控 sysroot 清单。sysroot 来源、摘要和导入状态待 CCU 实机基线
+# 确认后填入。各服务不得自行复制任意目标机 /usr 作为发布 sysroot。
+
+sysroot:
+  id: ccu-dev-sysroot
+  source: TBD
+  repository_path: sysroots/ccu-dev-sysroot
+  digest: TBD
+  file_manifest: TBD
+  import_status: pending
+  tbd_items:
+    - field: sysroot.source
+      owner: CCU 构建团队
+      close_gate: 受控 sysroot 来源确认
+    - field: sysroot.digest
+      owner: CCU 构建团队
+      close_gate: sysroot 导入后计算结构摘要
+    - field: sysroot.file_manifest
+      owner: CCU 构建团队
+      close_gate: sysroot 导入后生成文件清单

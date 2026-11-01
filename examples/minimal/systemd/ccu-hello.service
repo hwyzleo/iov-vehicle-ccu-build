@@ -1,0 +1,14 @@
+[Unit]
+Description=CCU Hello Service (BUILD v0.1-draft minimal example)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ccu-hello-cli CCU
+Restart=on-failure
+RestartSec=3
+User=ccu
+Group=ccu
+
+[Install]
+WantedBy=multi-user.target

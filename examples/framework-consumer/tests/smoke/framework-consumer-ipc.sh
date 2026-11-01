@@ -1,10 +1,10 @@
 #!/bin/bash
-# CGW Framework Consumer smoke test script (CR-002 self-verification).
+# CCU Framework Consumer smoke test script (CR-002 self-verification).
 # Run the consumer and check it links the framework and reports OK.
 set -euo pipefail
-BIN="/usr/bin/cgw-framework-consumer"
+BIN="/usr/bin/ccu-framework-consumer"
 OUTPUT=$("$BIN" 2>&1 || true)
-if echo "$OUTPUT" | grep -q "cgw-framework-consumer: OK"; then
+if echo "$OUTPUT" | grep -q "ccu-framework-consumer: OK"; then
     echo "OK: smoke test passed"
     exit 0
 fi

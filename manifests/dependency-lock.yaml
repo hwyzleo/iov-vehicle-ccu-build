@@ -1,6 +1,6 @@
-# CGW Build Dependency Lock File
+# CCU Build Dependency Lock File
 # Records versions, sources, licenses, architecture, linkage and checksums
-# for TARGET dependencies built by the recipe executor into CGW_DEP_STAGING.
+# for TARGET dependencies built by the recipe executor into CCU_DEP_STAGING.
 #
 # CR-001: 空依赖锁定骨架。
 # CR-002: 登记 framework 首个受控 TARGET 依赖 yaml-cpp。
@@ -10,7 +10,7 @@
 # builds (DependencyEntry.is_source_pinned == False).
 #
 # HOST dev/test 自验证：yaml-cpp 由 framework 仓库的 scripts/stage-yaml-cpp.sh
-# 将受控预编译 archive 暂存到 CGW_DEP_STAGING（HOST 架构，仅用于开发/测试，
+# 将受控预编译 archive 暂存到 CCU_DEP_STAGING（HOST 架构，仅用于开发/测试，
 # 不得用于 aarch64-linux 目标链接）。TARGET 正式构建由 BUILD 受控源码 recipe
 # 提供匹配架构的 yaml-cpp package（后续 CR 实现真实 recipe 执行）。
 

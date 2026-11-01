@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.config import (
+from ccu_build.config import (
     ConfigOverlay,
     ConfigValidator,
     OverlayReport,
     atomic_write,
     normalize_source_path,
 )
-from cgw_build.errors import ConfigError, OverlayError
-from cgw_build.manifest import (
+from ccu_build.errors import ConfigError, OverlayError
+from ccu_build.manifest import (
     ConfigDeploymentManifest,
     ConfigDeploymentRule,
     PlatformConfigDeployment,
@@ -26,7 +26,7 @@ from cgw_build.manifest import (
     RuntimeConfig,
     ConfigValidation,
 )
-from cgw_build.staging import sha256_file
+from ccu_build.staging import sha256_file
 
 
 # ---------------------------------------------------------------------------
@@ -37,16 +37,16 @@ from cgw_build.staging import sha256_file
 def _make_deployment(rules: list[ConfigDeploymentRule]) -> ConfigDeploymentManifest:
     return ConfigDeploymentManifest(
         version=1,
-        platforms={"cgw-dev": PlatformConfigDeployment(platform="cgw-dev", files=rules)},
+        platforms={"ccu-dev": PlatformConfigDeployment(platform="ccu-dev", files=rules)},
     )
 
 
 def _make_overlay(tmp_path: Path, rootfs: Path, rules=None, services=None,
                   project_root: Path | None = None) -> ConfigOverlay:
-    p = Project(project_root or tmp_path, platform="cgw-dev") if (project_root or _has_project(tmp_path)) else None
+    p = Project(project_root or tmp_path, platform="ccu-dev") if (project_root or _has_project(tmp_path)) else None
     # Use real project for schema resolution; fall back to empty manifest.
     if project_root is not None:
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         sm = services if services is not None else project.load_service_manifest()
         dep = project.load_config_deployment_manifest() if rules is None else _make_deployment(rules)
         rootfs = project.platform_configs_root() if rootfs is None else rootfs
@@ -54,7 +54,7 @@ def _make_overlay(tmp_path: Path, rootfs: Path, rules=None, services=None,
         sm = services or ServiceManifest(services={})
         dep = _make_deployment(rules or [])
     return ConfigOverlay(
-        platform="cgw-dev",
+        platform="ccu-dev",
         platform_rootfs=rootfs,
         install_root=tmp_path / "install-root",
         deployment=dep,
@@ -70,7 +70,7 @@ def _has_project(tmp_path: Path) -> bool:
 
 def _write_service_default(install_root: Path, svc_id: str, content: bytes) -> str:
     """Write a service default config into install-root and return logical path."""
-    logical = f"etc/cgw/conf.d/{svc_id}.yaml"
+    logical = f"etc/ccu/conf.d/{svc_id}.yaml"
     target = install_root / logical
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
@@ -85,34 +85,34 @@ def _write_service_default(install_root: Path, svc_id: str, content: bytes) -> s
 class TestNormalizeSourcePath:
     def test_valid_relative(self, tmp_path: Path):
         rootfs = tmp_path / "rootfs"
-        (rootfs / "etc/cgw").mkdir(parents=True)
-        f = rootfs / "etc/cgw/common.yaml"
+        (rootfs / "etc/ccu").mkdir(parents=True)
+        f = rootfs / "etc/ccu/common.yaml"
         f.write_text("a: 1\n")
-        assert normalize_source_path(rootfs, f) == "etc/cgw/common.yaml"
+        assert normalize_source_path(rootfs, f) == "etc/ccu/common.yaml"
 
     def test_rejects_symlink(self, tmp_path: Path):
         rootfs = tmp_path / "rootfs"
-        (rootfs / "etc/cgw").mkdir(parents=True)
+        (rootfs / "etc/ccu").mkdir(parents=True)
         target = tmp_path / "outside.txt"
         target.write_text("x")
-        link = rootfs / "etc/cgw/link.yaml"
+        link = rootfs / "etc/ccu/link.yaml"
         os.symlink(target, link)
         with pytest.raises(OverlayError, match="(?i)symlink"):
             normalize_source_path(rootfs, link)
 
     def test_rejects_symlink_escape(self, tmp_path: Path):
         rootfs = tmp_path / "rootfs"
-        (rootfs / "etc/cgw").mkdir(parents=True)
+        (rootfs / "etc/ccu").mkdir(parents=True)
         outside = tmp_path / "secret.yaml"
         outside.write_text("password: x\n")
-        link = rootfs / "etc/cgw/escape.yaml"
+        link = rootfs / "etc/ccu/escape.yaml"
         os.symlink(outside, link)
         with pytest.raises(OverlayError):
             normalize_source_path(rootfs, link)
 
     def test_rejects_directory(self, tmp_path: Path):
         rootfs = tmp_path / "rootfs"
-        d = rootfs / "etc/cgw"
+        d = rootfs / "etc/ccu"
         d.mkdir(parents=True)
         with pytest.raises(OverlayError, match="Non-regular"):
             normalize_source_path(rootfs, d)
@@ -143,7 +143,7 @@ class TestAtomicWrite:
     def test_no_temp_left(self, tmp_path: Path):
         target = tmp_path / "c.yaml"
         atomic_write(target, b"x")
-        leftovers = [p for p in tmp_path.iterdir() if p.name.startswith(".cgw-overlay")]
+        leftovers = [p for p in tmp_path.iterdir() if p.name.startswith(".ccu-overlay")]
         assert leftovers == []
 
 
@@ -154,8 +154,8 @@ class TestAtomicWrite:
 
 class TestConfigOverlayApply:
     def _setup_real(self, project_root: Path, tmp_path: Path):
-        """Overlay against real cgw-dev platform configs + example schemas."""
-        project = Project(project_root, platform="cgw-dev")
+        """Overlay against real ccu-dev platform configs + example schemas."""
+        project = Project(project_root, platform="ccu-dev")
         dep = project.load_config_deployment_manifest()
         sm = project.load_service_manifest()
         install_root = tmp_path / "install-root"
@@ -163,16 +163,16 @@ class TestConfigOverlayApply:
         state_dir = tmp_path / "manifests"
         state_dir.mkdir(parents=True)
         # Seed service defaults
-        d1 = (project.root / "examples/minimal/config/cgw-hello-cli.default.yaml").read_bytes()
+        d1 = (project.root / "examples/minimal/config/ccu-hello-cli.default.yaml").read_bytes()
         d2 = (project.root / "examples/framework-consumer/config/framework-consumer.default.yaml").read_bytes()
-        _write_service_default(install_root, "cgw-hello-cli", d1)
+        _write_service_default(install_root, "ccu-hello-cli", d1)
         _write_service_default(install_root, "framework-consumer", d2)
         file_owners = {
-            "etc/cgw/conf.d/cgw-hello-cli.yaml": ("cgw-hello-cli", "cgw-hello-cli-runtime", sha256_file(install_root / "etc/cgw/conf.d/cgw-hello-cli.yaml")),
-            "etc/cgw/conf.d/framework-consumer.yaml": ("framework-consumer", "cgw-framework-consumer-runtime", sha256_file(install_root / "etc/cgw/conf.d/framework-consumer.yaml")),
+            "etc/ccu/conf.d/ccu-hello-cli.yaml": ("ccu-hello-cli", "ccu-hello-cli-runtime", sha256_file(install_root / "etc/ccu/conf.d/ccu-hello-cli.yaml")),
+            "etc/ccu/conf.d/framework-consumer.yaml": ("framework-consumer", "ccu-framework-consumer-runtime", sha256_file(install_root / "etc/ccu/conf.d/framework-consumer.yaml")),
         }
         overlay = ConfigOverlay(
-            platform="cgw-dev",
+            platform="ccu-dev",
             platform_rootfs=project.platform_configs_root(),
             install_root=install_root,
             deployment=dep,
@@ -186,24 +186,24 @@ class TestConfigOverlayApply:
         overlay, install_root, owners = self._setup_real(project_root, tmp_path)
         report = overlay.apply(owners)
         paths = {r.logical_path for r in report.overlaid}
-        assert "/etc/cgw/common.yaml" in paths
-        assert "/etc/cgw/conf.d/cgw-hello-cli.yaml" in paths
-        assert "/etc/cgw/conf.d/framework-consumer.yaml" in paths
+        assert "/etc/ccu/common.yaml" in paths
+        assert "/etc/ccu/conf.d/ccu-hello-cli.yaml" in paths
+        assert "/etc/ccu/conf.d/framework-consumer.yaml" in paths
 
     def test_whole_file_replace(self, project_root: Path, tmp_path: Path):
         overlay, install_root, owners = self._setup_real(project_root, tmp_path)
         report = overlay.apply(owners)
         # Final content must be the platform value, not the default
-        final = (install_root / "etc/cgw/conf.d/cgw-hello-cli.yaml").read_text()
-        assert "cgw-dev" in final
-        rec = next(r for r in report.overlaid if "cgw-hello-cli" in r.logical_path)
-        assert rec.pre_overlay_source == "cgw-hello-cli"
+        final = (install_root / "etc/ccu/conf.d/ccu-hello-cli.yaml").read_text()
+        assert "ccu-dev" in final
+        rec = next(r for r in report.overlaid if "ccu-hello-cli" in r.logical_path)
+        assert rec.pre_overlay_source == "ccu-hello-cli"
         assert rec.pre_overlay_sha256 != rec.final_sha256
 
     def test_pre_overlay_source_none_for_common(self, project_root: Path, tmp_path: Path):
         overlay, install_root, owners = self._setup_real(project_root, tmp_path)
         report = overlay.apply(owners)
-        rec = next(r for r in report.overlaid if r.logical_path == "/etc/cgw/common.yaml")
+        rec = next(r for r in report.overlaid if r.logical_path == "/etc/ccu/common.yaml")
         assert rec.pre_overlay_source == "(none)"
         assert rec.pre_overlay_sha256 == ""
 
@@ -226,27 +226,27 @@ class TestConfigOverlayApply:
     def test_stale_build_owned_removed(self, project_root: Path, tmp_path: Path):
         overlay, install_root, owners = self._setup_real(project_root, tmp_path)
         overlay.apply(owners)
-        assert (install_root / "etc/cgw/common.yaml").exists()
+        assert (install_root / "etc/ccu/common.yaml").exists()
         # Point overlay at empty rootfs to simulate removed platform configs
         empty = tmp_path / "empty-rootfs"
         empty.mkdir()
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         overlay2 = ConfigOverlay(
-            platform="cgw-dev", platform_rootfs=empty, install_root=install_root,
+            platform="ccu-dev", platform_rootfs=empty, install_root=install_root,
             deployment=project.load_config_deployment_manifest(),
             service_manifest=project.load_service_manifest(),
             project_root=project.root, state_dir=tmp_path / "manifests",
         )
         report = overlay2.apply(owners)
-        assert any(r["logical_path"] == "etc/cgw/common.yaml" for r in report.removed)
-        assert not (install_root / "etc/cgw/common.yaml").exists()
+        assert any(r["logical_path"] == "etc/ccu/common.yaml" for r in report.removed)
+        assert not (install_root / "etc/ccu/common.yaml").exists()
         # Service-owned file is NOT removed (reset by re-install)
-        assert (install_root / "etc/cgw/conf.d/cgw-hello-cli.yaml").exists()
+        assert (install_root / "etc/ccu/conf.d/ccu-hello-cli.yaml").exists()
 
     def test_skips_unauthorized_path(self, tmp_path: Path):
         rootfs = tmp_path / "rootfs"
-        (rootfs / "etc/cgw").mkdir(parents=True)
-        (rootfs / "etc/cgw/random.bin").write_bytes(b"x")
+        (rootfs / "etc/ccu").mkdir(parents=True)
+        (rootfs / "etc/ccu/random.bin").write_bytes(b"x")
         # No rules -> everything unmatched
         overlay = _make_overlay(tmp_path, rootfs, rules=[], services=ServiceManifest(services={}))
         report = overlay.apply()
@@ -255,9 +255,9 @@ class TestConfigOverlayApply:
 
     def test_skips_device_managed(self, tmp_path: Path):
         rootfs = tmp_path / "rootfs"
-        (rootfs / "etc/cgw/credentials").mkdir(parents=True)
-        (rootfs / "etc/cgw/credentials/device.yaml").write_bytes(b"k: v\n")
-        rules = [_r(path_glob="/etc/cgw/credentials/**", owner="provisioning",
+        (rootfs / "etc/ccu/credentials").mkdir(parents=True)
+        (rootfs / "etc/ccu/credentials/device.yaml").write_bytes(b"k: v\n")
+        rules = [_r(path_glob="/etc/ccu/credentials/**", owner="provisioning",
                     category="device-managed", deploy_policy="preserve")]
         overlay = _make_overlay(tmp_path, rootfs, rules=rules, services=ServiceManifest(services={}))
         report = overlay.apply()
@@ -279,14 +279,14 @@ def _r(path=None, path_glob=None, owner="build", category="release-managed",
 class TestOverlaySecretFailure:
     def test_pem_in_platform_source_fails_check(self, tmp_path: Path):
         rootfs = tmp_path / "rootfs"
-        (rootfs / "etc/cgw").mkdir(parents=True)
-        (rootfs / "etc/cgw/common.yaml").write_bytes(
+        (rootfs / "etc/ccu").mkdir(parents=True)
+        (rootfs / "etc/ccu/common.yaml").write_bytes(
             b"-----BEGIN RSA PRIVATE KEY-----\nMIIBOQIBAA==\n-----END RSA PRIVATE KEY-----\n")
-        rules = [_r(path="/etc/cgw/common.yaml")]
+        rules = [_r(path="/etc/ccu/common.yaml")]
         (tmp_path / "install-root").mkdir(parents=True)
         (tmp_path / "manifests").mkdir()
         overlay = ConfigOverlay(
-            platform="cgw-dev", platform_rootfs=rootfs,
+            platform="ccu-dev", platform_rootfs=rootfs,
             install_root=tmp_path / "install-root",
             deployment=_make_deployment(rules),
             service_manifest=ServiceManifest(services={}),
@@ -308,9 +308,9 @@ class TestOverlaySchemaFailure:
     def test_invalid_config_fails_validation(self, tmp_path: Path):
         # Service declaring a schema that the platform file violates.
         rootfs = tmp_path / "rootfs"
-        (rootfs / "etc/cgw/conf.d").mkdir(parents=True)
+        (rootfs / "etc/ccu/conf.d").mkdir(parents=True)
         # Missing required 'service_name'
-        (rootfs / "etc/cgw/conf.d/svc.yaml").write_bytes(b"greeting: hi\n")
+        (rootfs / "etc/ccu/conf.d/svc.yaml").write_bytes(b"greeting: hi\n")
         # service source dir with schema
         svc_dir = tmp_path / "mysvc"
         (svc_dir / "config/schema").mkdir(parents=True)
@@ -320,18 +320,18 @@ class TestOverlaySchemaFailure:
             'properties:\n  service_name:\n    type: string\n  greeting:\n    type: string\n')
         cv = ConfigValidation(
             schema="config/schema/svc.schema.yaml",
-            target_path="/etc/cgw/conf.d/svc.yaml",
+            target_path="/etc/ccu/conf.d/svc.yaml",
             default_source="config/svc.default.yaml",
         )
         svc = Service(id="svc", repository="mysvc",
-                      build=__import__("cgw_build.manifest", fromlist=["BuildConfig"]).BuildConfig(preset="p"),
+                      build=__import__("ccu_build.manifest", fromlist=["BuildConfig"]).BuildConfig(preset="p"),
                       runtime=RuntimeConfig(config_validation=cv))
         sm = ServiceManifest(services={"svc": svc})
-        rules = [_r(path_glob="/etc/cgw/conf.d/*.yaml", owner="service")]
+        rules = [_r(path_glob="/etc/ccu/conf.d/*.yaml", owner="service")]
         (tmp_path / "install-root").mkdir(parents=True)
         (tmp_path / "manifests").mkdir()
         overlay = ConfigOverlay(
-            platform="cgw-dev", platform_rootfs=rootfs,
+            platform="ccu-dev", platform_rootfs=rootfs,
             install_root=tmp_path / "install-root",
             deployment=_make_deployment(rules),
             service_manifest=sm, project_root=tmp_path,
@@ -345,8 +345,8 @@ class TestOverlaySchemaFailure:
 
     def test_top_level_common_rejected(self, tmp_path: Path):
         rootfs = tmp_path / "rootfs"
-        (rootfs / "etc/cgw/conf.d").mkdir(parents=True)
-        (rootfs / "etc/cgw/conf.d/svc.yaml").write_bytes(
+        (rootfs / "etc/ccu/conf.d").mkdir(parents=True)
+        (rootfs / "etc/ccu/conf.d/svc.yaml").write_bytes(
             b"common:\n  x: 1\nservice_name: svc\n")
         svc_dir = tmp_path / "mysvc"
         (svc_dir / "config/schema").mkdir(parents=True)
@@ -356,18 +356,18 @@ class TestOverlaySchemaFailure:
             'properties:\n  service_name:\n    type: string\n')
         cv = ConfigValidation(
             schema="config/schema/svc.schema.yaml",
-            target_path="/etc/cgw/conf.d/svc.yaml",
+            target_path="/etc/ccu/conf.d/svc.yaml",
             default_source="config/svc.default.yaml",
         )
-        from cgw_build.manifest import BuildConfig
+        from ccu_build.manifest import BuildConfig
         svc = Service(id="svc", repository="mysvc", build=BuildConfig(preset="p"),
                       runtime=RuntimeConfig(config_validation=cv))
         sm = ServiceManifest(services={"svc": svc})
-        rules = [_r(path_glob="/etc/cgw/conf.d/*.yaml", owner="service")]
+        rules = [_r(path_glob="/etc/ccu/conf.d/*.yaml", owner="service")]
         (tmp_path / "install-root").mkdir(parents=True)
         (tmp_path / "manifests").mkdir()
         overlay = ConfigOverlay(
-            platform="cgw-dev", platform_rootfs=rootfs,
+            platform="ccu-dev", platform_rootfs=rootfs,
             install_root=tmp_path / "install-root",
             deployment=_make_deployment(rules),
             service_manifest=sm, project_root=tmp_path,
@@ -386,30 +386,30 @@ class TestOverlaySchemaFailure:
 
 class TestConfigValidator:
     def test_common_yaml_validates(self, project_root: Path, tmp_path: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         sm = project.load_service_manifest()
         v = ConfigValidator(sm, project.root)
         content = b"log_level: info\n"
-        result = v.validate("etc/cgw/common.yaml", content)
+        result = v.validate("etc/ccu/common.yaml", content)
         assert result["status"] == "pass"
 
     def test_common_yaml_parse_error(self, project_root: Path, tmp_path: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         sm = project.load_service_manifest()
         v = ConfigValidator(sm, project.root)
-        result = v.validate("etc/cgw/common.yaml", b"\t\0bad: [")
+        result = v.validate("etc/ccu/common.yaml", b"\t\0bad: [")
         assert result["status"] == "fail"
 
     def test_service_config_validates(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         sm = project.load_service_manifest()
         v = ConfigValidator(sm, project.root)
-        content = b"service_name: cgw-hello\ngreeting: hi\n"
-        result = v.validate("etc/cgw/conf.d/cgw-hello-cli.yaml", content)
+        content = b"service_name: ccu-hello\ngreeting: hi\n"
+        result = v.validate("etc/ccu/conf.d/ccu-hello-cli.yaml", content)
         assert result["status"] == "pass"
 
     def test_no_schema_skips(self, project_root: Path):
-        project = Project(project_root, platform="cgw-dev")
+        project = Project(project_root, platform="ccu-dev")
         sm = project.load_service_manifest()
         v = ConfigValidator(sm, project.root)
         result = v.validate("etc/some/other.yaml", b"a: 1\n")
@@ -423,11 +423,11 @@ class TestConfigValidator:
 
 class TestOverlayReport:
     def test_save_and_load(self, tmp_path: Path):
-        report = OverlayReport(platform="cgw-dev")
+        report = OverlayReport(platform="ccu-dev")
         report.skipped.append({"logical_path": "/x", "reason": "test"})
         out = tmp_path / "report.json"
         report.save(out)
         import json
         data = json.loads(out.read_text())
-        assert data["platform"] == "cgw-dev"
+        assert data["platform"] == "ccu-dev"
         assert data["skipped"][0]["reason"] == "test"

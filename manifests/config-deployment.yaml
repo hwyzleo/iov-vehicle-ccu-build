@@ -1,7 +1,7 @@
-# CGW Build Config Deployment Manifest
-# Declares deploy policy for /etc/cgw/** files per platform (设计 §9.4).
+# CCU Build Config Deployment Manifest
+# Declares deploy policy for /etc/ccu/** files per platform (设计 §9.4).
 #
-# CR: CGW-BUILD-DSN-CR-003 §9.4
+# CR: CCU-BUILD-DSN-CR-003 §9.4
 #
 # deploy_policy: replace|preserve|create_if_missing
 #   - release-managed 配置 MAY 使用 replace；
@@ -11,17 +11,17 @@
 # device-managed 文件不得 replace。
 version: 1
 platforms:
-  cgw-dev:
+  ccu-dev:
     files:
-      - path: /etc/cgw/common.yaml
+      - path: /etc/ccu/common.yaml
         owner: build
         category: release-managed
         deploy_policy: replace
-      - path_glob: /etc/cgw/conf.d/*.yaml
+      - path_glob: /etc/ccu/conf.d/*.yaml
         owner: service
         category: release-managed
         deploy_policy: replace
-      - path_glob: /etc/cgw/credentials/**
+      - path_glob: /etc/ccu/credentials/**
         owner: provisioning
         category: device-managed
         deploy_policy: preserve

@@ -1,7 +1,7 @@
-# JSON Schema (Draft-07) for CGW Build Service Manifest
+# JSON Schema (Draft-07) for CCU Build Service Manifest
 # Validates manifests/services.yaml
 #
-# CR: CGW-BUILD-DSN-CR-001 §5 项目与编排模型
+# CR: CCU-BUILD-DSN-CR-001 §5 项目与编排模型
 #
 # 字段策略：
 #   - build.targets[] (复数) 为规范形式；旧版 build.target (单数) 兼容接受。
@@ -10,7 +10,7 @@
 #   - build.service_dependencies[] 和 build.target_dependencies[] 为显式依赖字段。
 #   - kind 可选；省略时默认 "daemon"。
 $schema: "http://json-schema.org/draft-07/schema#"
-title: CGW Build Service Manifest
+title: CCU Build Service Manifest
 type: object
 required:
   - services

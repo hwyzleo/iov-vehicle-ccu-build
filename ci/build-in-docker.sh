@@ -5,26 +5,26 @@
 # Called by ci/pipeline.sh when a target (non-host) platform is selected.
 set -euo pipefail
 
-cd "${CGW_ROOT:-$(pwd}"
+cd "${CCU_ROOT:-$(pwd}"
 
-echo "=== CGW Build (in Docker) ==="
-echo "CGW_ROOT: ${CGW_ROOT:-$(pwd)}"
-echo "Platform: ${CGW_PLATFORM:-cgw-dev}"
-echo "Profile: ${CGW_PROFILE:-release}"
+echo "=== CCU Build (in Docker) ==="
+echo "CCU_ROOT: ${CCU_ROOT:-$(pwd)}"
+echo "Platform: ${CCU_PLATFORM:-ccu-dev}"
+echo "Profile: ${CCU_PROFILE:-release}"
 
 # Validate manifests
-python3 -m cgw_build validate --platform "${CGW_PLATFORM:-cgw-dev}"
+python3 -m ccu_build validate --platform "${CCU_PLATFORM:-ccu-dev}"
 
 # Build
-python3 -m cgw_build build \
-    --set "${CGW_SET:-cgw-dev-minimal}" \
-    --platform "${CGW_PLATFORM:-cgw-dev}" \
-    --profile "${CGW_PROFILE:-release}" \
-    --jobs "${CGW_JOBS:-4}"
+python3 -m ccu_build build \
+    --set "${CCU_SET:-ccu-dev-minimal}" \
+    --platform "${CCU_PLATFORM:-ccu-dev}" \
+    --profile "${CCU_PROFILE:-release}" \
+    --jobs "${CCU_JOBS:-4}"
 
 # Package
-python3 -m cgw_build package \
-    --platform "${CGW_PLATFORM:-cgw-dev}" \
-    --profile "${CGW_PROFILE:-release}"
+python3 -m ccu_build package \
+    --platform "${CCU_PLATFORM:-ccu-dev}" \
+    --profile "${CCU_PROFILE:-release}"
 
 echo "=== Build complete ==="

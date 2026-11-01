@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from cgw_build.staging import StagingDir, sha256_file, StagedFile
+from ccu_build.staging import StagingDir, sha256_file, StagedFile
 
 
 class TestStagingDir:
     def test_staging_paths(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
-        assert staging.root == tmp_path / "out" / "cgw-dev" / "release"
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
+        assert staging.root == tmp_path / "out" / "ccu-dev" / "release"
         assert staging.install_root == staging.root / "install-root"
         assert staging.sdk_root == staging.root / "sdk"
         assert staging.deps_root == staging.root / "deps"
@@ -22,7 +22,7 @@ class TestStagingDir:
         assert staging.packages_dir == staging.root / "packages"
 
     def test_prepare_creates_dirs(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         staging.prepare()
         assert staging.root.is_dir()
         assert staging.install_root.is_dir()
@@ -34,7 +34,7 @@ class TestStagingDir:
         assert staging.packages_dir.is_dir()
 
     def test_prepare_clean(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         staging.prepare()
         (staging.install_root / "test.txt").write_text("test")
         assert (staging.install_root / "test.txt").exists()
@@ -42,30 +42,30 @@ class TestStagingDir:
         assert not (staging.install_root / "test.txt").exists()
 
     def test_component_destdir_rootfs(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         destdir = staging.component_destdir("svc-a", "rootfs")
         assert destdir == staging.install_root
 
     def test_component_destdir_sdk(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         destdir = staging.component_destdir("svc-a", "sdk")
         assert destdir == staging.sdk_root / "svc-a"
 
     def test_component_destdir_invalid(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         with pytest.raises(ValueError):
             staging.component_destdir("svc-a", "invalid")
 
     def test_dep_staging_usr(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         assert staging.dep_staging_usr() == staging.deps_root / "usr"
 
     def test_service_build_dir(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         assert staging.service_build_dir("svc-a") == staging.build_dir / "svc-a"
 
     def test_service_log_file(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         assert staging.service_log_file("svc-a", "configure") == staging.logs_dir / "svc-a-configure.log"
 
 
@@ -80,13 +80,13 @@ class TestSha256:
 
 class TestScanFiles:
     def test_scan_empty(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         staging.prepare()
         files = staging.scan_files()
         assert files == []
 
     def test_scan_with_files(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         staging.prepare()
         (staging.install_root / "usr").mkdir(parents=True)
         (staging.install_root / "usr" / "bin").mkdir()
@@ -98,7 +98,7 @@ class TestScanFiles:
         assert len(files[0].sha256) == 64
 
     def test_scan_sdk_files(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         staging.prepare()
         sdk = staging.sdk_dir("lib-a")
         (sdk / "usr").mkdir(parents=True)
@@ -111,12 +111,12 @@ class TestScanFiles:
 
 class TestSnapshotPaths:
     def test_snapshot_empty(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         staging.prepare()
         assert staging.snapshot_paths() == set()
 
     def test_snapshot_with_files(self, tmp_path: Path):
-        staging = StagingDir(tmp_path, platform="cgw-dev", profile="release")
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
         staging.prepare()
         (staging.install_root / "usr").mkdir(parents=True)
         (staging.install_root / "usr" / "bin").mkdir()

@@ -1,12 +1,12 @@
-# JSON Schema (Draft-07) for CGW Build Platform Manifest
+# JSON Schema (Draft-07) for CCU Build Platform Manifest
 # Validates manifests/platforms/<platform>.yaml
 #
-# CR: CGW-BUILD-DSN-CR-001 §3 Platform Manifest
+# CR: CCU-BUILD-DSN-CR-001 §3 Platform Manifest
 #
 # 要求：TBD 项必须记录 owner 和 close_gate（关闭门槛）。
 # 清单、toolchain、sysroot 与依赖锁定统一版本化。
 $schema: "http://json-schema.org/draft-07/schema#"
-title: CGW Build Platform Manifest
+title: CCU Build Platform Manifest
 type: object
 required:
   - platform

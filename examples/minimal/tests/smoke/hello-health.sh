@@ -1,8 +1,8 @@
 #!/bin/bash
-# CGW Hello health check script (minimal example)
+# CCU Hello health check script (minimal example)
 # Exit 0 if the service binary exists and is executable.
 set -euo pipefail
-BIN="/usr/bin/cgw-hello-cli"
+BIN="/usr/bin/ccu-hello-cli"
 if [ -x "$BIN" ]; then
     echo "OK: $BIN is executable"
     exit 0

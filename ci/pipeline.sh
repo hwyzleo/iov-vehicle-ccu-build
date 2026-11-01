@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ci/pipeline.sh - CGW Build CI pipeline
+# ci/pipeline.sh - CCU Build CI pipeline
 #
 # Executes the full build verification pipeline (设计 §8 CI 分层 - 提交级):
 #   1. Lint (manifest/schema validation)
@@ -14,9 +14,9 @@
 #   ./ci/pipeline.sh [OPTIONS]
 #
 # OPTIONS:
-#   --set <id>         Release set to build/package (default: cgw-dev-minimal).
+#   --set <id>         Release set to build/package (default: ccu-dev-minimal).
 #   --service <id>     Build/package a single service instead of a set.
-#   --platform <p>     Target platform (default: cgw-dev).
+#   --platform <p>     Target platform (default: ccu-dev).
 #   --profile <p>      debug | release (default: release).
 #   -j, --jobs <n>     Parallel build jobs (default: 4).
 #   --build-only       Run build + package but skip the final verify step.
@@ -28,9 +28,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Defaults
-PLATFORM="cgw-dev"
+PLATFORM="ccu-dev"
 PROFILE="release"
-SET="cgw-dev-minimal"
+SET="ccu-dev-minimal"
 SERVICE=""
 JOBS=4
 BUILD_ONLY=0
@@ -60,7 +60,7 @@ while [ $# -gt 0 ]; do
 done
 
 cd "$PROJECT_ROOT"
-export CGW_ROOT="$PROJECT_ROOT"
+export CCU_ROOT="$PROJECT_ROOT"
 
 if [ -n "$SERVICE" ]; then
     SCOPE_ARGS=(--service "$SERVICE")
@@ -71,14 +71,14 @@ else
 fi
 
 echo "================================================"
-echo " CGW Build CI Pipeline"
+echo " CCU Build CI Pipeline"
 echo " Platform: $PLATFORM, Profile: $PROFILE, $SCOPE_DESC, Jobs: $JOBS"
 echo "================================================"
 
 # Step 1: Validate manifests (host-side, no Docker needed)
 echo ""
 echo "[1/7] Lint - manifest/schema validation"
-python3 -m cgw_build validate --platform "$PLATFORM"
+python3 -m ccu_build validate --platform "$PLATFORM"
 
 # Steps 2-6: Build, install, ELF check, package
 DRY_FLAG=""
@@ -86,7 +86,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
     DRY_FLAG="--dry-run"
     echo ""
     echo "[2-6/7] Build, install, ELF check, package (DRY-RUN)"
-    python3 -m cgw_build build "${SCOPE_ARGS[@]}" --platform "$PLATFORM" --profile "$PROFILE" --jobs "$JOBS" $DRY_FLAG
+    python3 -m ccu_build build "${SCOPE_ARGS[@]}" --platform "$PLATFORM" --profile "$PROFILE" --jobs "$JOBS" $DRY_FLAG
     echo ""
     echo " CI Pipeline: SUCCESS (dry-run)"
     exit 0
@@ -96,12 +96,12 @@ echo ""
 echo "[2-6/7] Build, install, ELF check, package"
 # For target builds, run inside Docker; for host builds, run natively.
 if [ "$PLATFORM" = "host" ]; then
-    python3 -m cgw_build build "${SCOPE_ARGS[@]}" --platform "$PLATFORM" --profile "$PROFILE" --jobs "$JOBS"
-    python3 -m cgw_build package --platform "$PLATFORM" --profile "$PROFILE"
+    python3 -m ccu_build build "${SCOPE_ARGS[@]}" --platform "$PLATFORM" --profile "$PROFILE" --jobs "$JOBS"
+    python3 -m ccu_build package --platform "$PLATFORM" --profile "$PROFILE"
 else
     # Target build: requires Docker with cross-compile environment.
     # Container image is TBD per platform manifest (close_gate required).
-    IMAGE_NAME="cgw-build:0.1-draft"
+    IMAGE_NAME="ccu-build:0.1-draft"
     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
         echo "  Building $IMAGE_NAME..."
         docker build -t "$IMAGE_NAME" -f ci/Dockerfile . || {
@@ -111,15 +111,15 @@ else
     fi
     WORKSPACE_PARENT="$(cd "$PROJECT_ROOT/.." && pwd)"
     BUILD_SUBDIR="$(basename "$PROJECT_ROOT")"
-    CONTAINER_CGW_ROOT="/workspace/${BUILD_SUBDIR}"
+    CONTAINER_CCU_ROOT="/workspace/${BUILD_SUBDIR}"
     docker run --rm \
         -v "$WORKSPACE_PARENT":/workspace \
-        -e CGW_ROOT="$CONTAINER_CGW_ROOT" \
+        -e CCU_ROOT="$CONTAINER_CCU_ROOT" \
         --platform linux/arm64 \
         "$IMAGE_NAME" \
-        bash -c "cd '$CONTAINER_CGW_ROOT' && \
-            python3 -m cgw_build build ${SCOPE_ARGS[*]} --profile $PROFILE --jobs $JOBS && \
-            python3 -m cgw_build package --platform $PLATFORM --profile $PROFILE"
+        bash -c "cd '$CONTAINER_CCU_ROOT' && \
+            python3 -m ccu_build build ${SCOPE_ARGS[*]} --profile $PROFILE --jobs $JOBS && \
+            python3 -m ccu_build package --platform $PLATFORM --profile $PROFILE"
 fi
 
 # Step 7: Verify package
@@ -135,7 +135,7 @@ if [ "$BUILD_ONLY" -eq 1 ]; then
 else
     echo ""
     echo "[7/7] Verify package"
-    python3 -m cgw_build verify --platform "$PLATFORM" --profile "$PROFILE" --package "$PKG"
+    python3 -m ccu_build verify --platform "$PLATFORM" --profile "$PROFILE" --package "$PKG"
 fi
 
 echo ""
