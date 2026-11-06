@@ -1,0 +1,28 @@
+# =============================================================================
+# packaging/systemd/ccu.target.in - release-set aggregation target template
+# (CCU-BUILD-DSN-CR-004 §4.1)
+# =============================================================================
+# BUILD owns this template. It contains NO concrete business unit name and
+# NO device parameter; the release-set aggregation result is rendered by the
+# ReleaseSetAssembler into
+#
+#   install-root/usr/lib/systemd/system/ccu.target
+#
+# from the selected release-set's expanded dependency closure (topological
+# order, then each service's runtime.systemd_units declaration order).
+#
+# Placeholders:
+#   @RELEASE_SET_ID@ - the effective release-set id (never a service name)
+#   @ORDERED_UNITS@  - single space separated, newline terminated unit list
+#
+# Wants= (not Requires=) is deliberate: one failing service must not prevent
+# the rest of the release set from starting.
+# =============================================================================
+[Unit]
+Description=CCU Release Set @RELEASE_SET_ID@ Aggregation Target
+Documentation=https://app.notion.com/p/CCU-BUILD-SPEC-3b20ec7a4b92803fac49c7d11420a75e
+Wants=@ORDERED_UNITS@
+After=@ORDERED_UNITS@
+
+[Install]
+WantedBy=multi-user.target

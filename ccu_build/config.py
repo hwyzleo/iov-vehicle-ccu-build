@@ -358,6 +358,7 @@ class ConfigOverlay:
         service_manifest: ServiceManifest,
         project_root: Path,
         state_dir: Path,
+        claimed_paths: dict[str, str] | None = None,
     ):
         self.platform = platform
         self.platform_rootfs = Path(platform_rootfs)
@@ -367,6 +368,19 @@ class ConfigOverlay:
         self.project_root = Path(project_root)
         self.state_dir = Path(state_dir)
         self.state_file = self.state_dir / "config-overlay-state.json"
+        # CCU-BUILD-DSN-CR-004 §6: paths already installed by the
+        # ReleaseSetAssembler. The generic overlay must never write them
+        # twice; a double write or owner mismatch fails the build.
+        self.claimed_paths = dict(claimed_paths or {})
+        # Declared platform runtime assets are delivered exclusively by the
+        # ReleaseSetAssembler (CCU-BUILD-DSN-CR-004 §3.1/§5.3): the generic
+        # overlay never copies them, even when the declaring service is not in
+        # the current closure.
+        self.platform_asset_paths: set[str] = {
+            asset.target.lstrip("/")
+            for svc in service_manifest
+            for asset in svc.runtime.platform_assets
+        }
         plat_dep = deployment.get(platform)
         self._resolver = DeployPolicyResolver(
             plat_dep.files if plat_dep is not None else []
@@ -440,6 +454,29 @@ class ConfigOverlay:
         state_records: list[dict[str, Any]] = []
         for logical, src in sources:
             target_logical = "/" + logical
+            # CCU-BUILD-DSN-CR-004 §6: the assembler is the only installer of
+            # its claimed platform assets; the generic overlay skips them.
+            claimed_by = self.claimed_paths.get(logical)
+            if claimed_by is None and logical in self.platform_asset_paths:
+                claimed_by = "build:release-set-assembly (runtime.platform_assets)"
+            if claimed_by is not None:
+                try:
+                    rule = self._resolver.resolve(target_logical)
+                except OverlayError as exc:
+                    report.skipped.append({
+                        "logical_path": target_logical, "reason": str(exc)})
+                    continue
+                if rule is not None and rule.owner != "build":
+                    raise ConfigError(
+                        f"Overlay owner mismatch for BUILD-claimed path "
+                        f"'{target_logical}': deploy policy owner is "
+                        f"'{rule.owner}' (expected 'build')"
+                    )
+                report.skipped.append({
+                    "logical_path": target_logical,
+                    "reason": f"claimed by {claimed_by}",
+                })
+                continue
             # Step 4: authorization
             try:
                 rule = self._resolver.resolve(target_logical)
@@ -518,6 +555,13 @@ class ConfigOverlay:
 
         # Step 7: persist state + report (saved by caller via report.save)
         self._save_state(state_records)
+        overlaid = {rec.logical_path.lstrip("/") for rec in report.overlaid}
+        double = overlaid & (set(self.claimed_paths) | self.platform_asset_paths)
+        if double:
+            raise ConfigError(
+                "Generic config overlay wrote BUILD-claimed platform asset "
+                "path(s) twice: " + ", ".join(sorted(double))
+            )
         return report
 
     # -- post-overlay failure checks --------------------------------------

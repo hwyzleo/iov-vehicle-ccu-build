@@ -27,10 +27,18 @@ from pathlib import Path
 from typing import Any
 
 from .artifact import ArtifactManifest, get_git_commit
+from .assembly import (
+    INSTALL_COMPONENT as RELEASE_SET_COMPONENT,
+    OWNER_TARGET as RELEASE_SET_OWNER_TARGET,
+    AssemblyReport,
+    ReleaseSetAssembler,
+)
 from .config import ConfigOverlay
 from .elfcheck import check_staging, ElfCheckResult, EM_AARCH64, EM_X86_64, _ELFCLASS64, _MACHINE_NAMES
-from .errors import BuildFailure, CcuBuildError, ConfigError
+from .errors import AssemblyError, BuildFailure, CcuBuildError, ConfigError
 from .graph import DependencyGraph
+from .reconcile import ReconcileReport, reconcile_install_root
+from .unitcheck import check_install_root_units
 from .manifest import (
     Project,
     Service,
@@ -70,6 +78,9 @@ class BuildConfig:
     clean: bool = False
     dry_run: bool = False
     skip_recipes: bool = False
+    # CCU-BUILD-DSN-CR-004 §11: explicit development exemption for builds
+    # without a real vsomeip backend. Never allowed for a release profile.
+    allow_missing_platform_assets: bool = False
 
     @property
     def build_type(self) -> str:
@@ -128,6 +139,12 @@ class BuildReport:
     profile: str = ""
     release_set: str | None = None
     services_requested: list[str] = field(default_factory=list)
+    expanded_services: list[str] = field(default_factory=list)
+    systemd_units: list[str] = field(default_factory=list)
+    aggregation_status: str = "not_applicable"
+    assembly_report_path: str | None = None
+    reconcile: dict[str, Any] | None = None
+    unit_check: dict[str, Any] | None = None
     target_dependencies: list[str] = field(default_factory=list)
     start_time: str = ""
     end_time: str = ""
@@ -427,8 +444,18 @@ class BuildOrchestrator:
                 return result
             if not self.config.dry_run:
                 new_files = self._new_files_under(destdir, before)
-                comp_result.installed_files = sorted(new_files)
-                all_installed.extend(new_files)
+                manifest_files = self._component_install_manifest_files(
+                    self.staging.service_build_dir(service.id), component, destdir
+                )
+                # CMake records the exact per-component install set in
+                # install_manifest_<component>.txt. Using it (instead of only
+                # the pre/post diff) keeps incremental builds correctly
+                # attributed, so no install-root file degrades to an
+                # "unknown" owner (CCU-BUILD-RELEASE-REQ-004).
+                comp_result.installed_files = sorted(
+                    set(new_files) | set(manifest_files)
+                )
+                all_installed.extend(comp_result.installed_files)
             result.components.append(comp_result)
 
         result.installed_files = sorted(all_installed)
@@ -448,6 +475,23 @@ class BuildOrchestrator:
     def _new_files_under(self, root: Path, before: set[str]) -> list[str]:
         after = self._snapshot_under(root)
         return sorted(after - before)
+
+    def _component_install_manifest_files(
+        self, build_dir: Path, component: InstallComponent, destdir: Path
+    ) -> list[str]:
+        """Return the per-component install set recorded by CMake."""
+        manifest = build_dir / f"install_manifest_{component.name}.txt"
+        if not manifest.is_file():
+            return []
+        files: list[str] = []
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            entry = line.strip()
+            if not entry:
+                continue
+            rel = entry.lstrip("/")
+            if (destdir / rel).exists():
+                files.append(rel)
+        return sorted(set(files))
 
     # -- full pipeline ----------------------------------------------------
 
@@ -487,7 +531,15 @@ class BuildOrchestrator:
             else:
                 report.services_requested = graph.all_service_ids()
                 order = graph.build_order()
+            report.expanded_services = list(order)
             print(f"  Build order: {' -> '.join(order)}")
+
+            if self.config.allow_missing_platform_assets and "release" in self.config.profile.lower():
+                raise BuildFailure(
+                    "--allow-missing-platform-assets is a development-only "
+                    "exemption and must not be used for a release profile "
+                    "(CCU-BUILD-DSN-CR-004 §11)"
+                )
 
             # 3. Prepare staging
             print("=== Preparing staging ===")
@@ -512,13 +564,27 @@ class BuildOrchestrator:
                     report.errors.append(f"Service '{sid}' failed: {result.error}")
                     break
 
-            # 5.5. Apply platform config overlay (设计 §9.3/§9.6)
+            # 5.6. Release-set assembly (target + platform runtime assets)
+            assembly_report = None
+            claimed_paths: dict[str, str] = {}
+            if report.status != "failed":
+                try:
+                    assembly_report, claimed_paths = self._assemble_release_set(
+                        service_manifest, set_id, order, report
+                    )
+                except AssemblyError as exc:
+                    report.status = "failed"
+                    report.errors.append(f"Release-set assembly failed: {exc}")
+                    report.errors.extend(getattr(exc, "errors", []) or [])
+
+            # 5.7. Apply platform config overlay (设计 §9.3/§9.6)
             overlay_report = None
             if report.status != "failed" and not self.config.dry_run:
                 print("\n=== Applying platform config overlay ===")
                 try:
                     overlay_report = self._apply_config_overlay(
-                        service_manifest, report.service_results
+                        service_manifest, report.service_results,
+                        claimed_paths=claimed_paths,
                     )
                     report.config_overlay_path = str(
                         (self.staging.manifests_dir / "config-overlay-report.json")
@@ -548,12 +614,28 @@ class BuildOrchestrator:
                     print(f"  {len(elf_results)} file(s) checked, "
                           f"{violations} violation(s), {warnings} warning(s)")
 
+            # 6.5. Unit check + manifest/install-root reconciliation (REQ-001/004)
+            if report.status != "failed" and not self.config.dry_run:
+                print("\n=== Unit and install-root reconciliation check ===")
+                report.unit_check = self._run_unit_check()
+                reconcile_report = self._reconcile(
+                    service_manifest, order, report.service_results,
+                    assembly_report, overlay_report,
+                )
+                report.reconcile = reconcile_report.to_dict()
+                if report.unit_check.get("status") == "fail":
+                    report.status = "failed"
+                    report.errors.extend(report.unit_check.get("errors", []))
+                if reconcile_report.errors:
+                    report.status = "failed"
+                    report.errors.extend(reconcile_report.errors)
+
             # 7. Artifact manifest (only if all checks passed)
             if report.status != "failed" and not self.config.dry_run:
                 print("\n=== Generating artifact manifest ===")
                 artifact_manifest = self._generate_artifact_manifest(
                     service_manifest, lock, git_commit, report.service_results,
-                    overlay_report,
+                    overlay_report, assembly_report,
                 )
                 manifest_path = self.staging.manifests_dir / "artifact-manifest.json"
                 artifact_manifest.save(manifest_path)
@@ -571,6 +653,9 @@ class BuildOrchestrator:
         except Exception as exc:
             report.status = "failed"
             report.errors.append(f"Unexpected error: {exc}")
+            if os.environ.get("CCU_BUILD_DEBUG"):
+                import traceback
+                traceback.print_exc()
 
         report.end_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
         report.duration_seconds = time.time() - pipeline_start
@@ -659,10 +744,196 @@ class BuildOrchestrator:
                     owners[f] = (result.id, comp.name, sha)
         return owners
 
+    def _assemble_release_set(
+        self,
+        service_manifest: ServiceManifest,
+        set_id: str | None,
+        order: list[str],
+        report: BuildReport,
+    ) -> tuple[AssemblyReport | None, dict[str, str]]:
+        """Generate the release-set aggregation target and platform assets."""
+        print("\n=== Release-set assembly ===")
+        assembler = ReleaseSetAssembler(
+            project=self.project,
+            staging=self.staging,
+            service_manifest=service_manifest,
+            allow_missing_assets=self.config.allow_missing_platform_assets,
+        )
+        if self.config.dry_run:
+            plan = assembler.plan(set_id, order, require_baseline_in_payload=False)
+            report.aggregation_status = plan.aggregation_status
+            report.systemd_units = list(plan.ordered_units)
+            print(f"  [DRY-RUN] aggregation: {plan.aggregation_status}")
+            if plan.ordered_units:
+                print(f"  [DRY-RUN] units: {' '.join(plan.ordered_units)}")
+            for asset in plan.assets:
+                print(f"  [DRY-RUN] asset: {asset.target} ({asset.validation})")
+            for err in plan.errors:
+                print(f"  [DRY-RUN] error: {err}")
+            if plan.errors:
+                raise AssemblyError(
+                    f"Release-set assembly plan failed ({len(plan.errors)} "
+                    f"error(s))",
+                    plan.errors,
+                )
+            return None, plan.claimed_paths
+
+        if set_id is None:
+            removed = assembler.clean_previous()
+            for item in removed:
+                print(f"  removed stale: {item['path']} ({item['reason']})")
+            report.aggregation_status = "not_applicable"
+            print("  no release set selected: no aggregation target")
+            return None, {}
+
+        assembly_report = assembler.assemble(set_id, order)
+        report.assembly_report_path = str(
+            assembler.report_path.relative_to(self.project.root)
+        )
+        report.aggregation_status = assembly_report.aggregation_status
+        report.systemd_units = list(assembly_report.ordered_units)
+        print(f"  aggregation: {assembly_report.aggregation_status}"
+              + (f" ({' '.join(assembly_report.ordered_units)})"
+                 if assembly_report.ordered_units else ""))
+        print(f"  platform assets: {len(assembly_report.assets)} installed, "
+              f"{len(assembly_report.skipped)} skipped, "
+              f"{len(assembly_report.removed)} stale removed")
+        claimed = {
+            path: "build:release-set-assembly"
+            for path in assembly_report.build_owned_paths
+        }
+        return assembly_report, claimed
+
+    def _run_unit_check(self) -> dict[str, Any]:
+        """Run the equivalent systemd unit check on the final install-root."""
+        result = check_install_root_units(self.staging.install_root)
+        print(f"  {result.engine}: {result.status} "
+              f"({len(result.checked)} unit file(s))")
+        for err in result.errors:
+            print(f"    FAIL: {err}")
+        return result.to_dict()
+
+    def _previous_owned_paths(self) -> set[str]:
+        """Install-root paths owned by the previous build (artifact manifest)."""
+        path = self.staging.manifests_dir / "artifact-manifest.json"
+        if not path.is_file():
+            return set()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return set()
+        owned: set[str] = set()
+        for artifact in data.get("artifacts", []) or []:
+            rel = str(artifact.get("path", ""))
+            owner = str(artifact.get("owner_service", ""))
+            if owner == "unknown" or not rel.startswith("rootfs/"):
+                continue
+            owned.add(rel[len("rootfs/"):])
+        return owned
+
+    def _previous_artifact_entries(self) -> dict[str, dict[str, Any]]:
+        """Previous artifact manifest entries keyed by ``rootfs/<rel>`` path.
+
+        Used as an ownership fallback so an incremental build never degrades
+        an already-attributed release asset to an ``unknown`` owner when a
+        release set shrinks (CCU-BUILD-RELEASE-REQ-004); those files are also
+        reported as stale by the reconciliation step.
+        """
+        path = self.staging.manifests_dir / "artifact-manifest.json"
+        if not path.is_file():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+        entries: dict[str, dict[str, Any]] = {}
+        for artifact in data.get("artifacts", []) or []:
+            rel = str(artifact.get("path", ""))
+            if not rel.startswith("rootfs/"):
+                continue
+            if str(artifact.get("owner_service", "")) in ("", "unknown"):
+                continue
+            entries[rel] = artifact
+        return entries
+
+    def _reconcile(
+        self,
+        service_manifest: ServiceManifest,
+        order: list[str],
+        service_results: list[ServiceResult],
+        assembly_report: AssemblyReport | None,
+        overlay_report,
+    ) -> ReconcileReport:
+        """Bidirectional manifest/install-root reconciliation (REQ-001)."""
+        owned: set[str] = set()
+        for result in service_results:
+            for comp in result.components:
+                if comp.staging != "rootfs":
+                    continue
+                owned.update(comp.installed_files)
+        if assembly_report is not None:
+            owned.update(assembly_report.build_owned_paths.keys())
+        if overlay_report is not None:
+            for rec in overlay_report.overlaid:
+                owned.add(rec.logical_path.lstrip("/"))
+
+        staged = self.staging.scan_files()
+
+        # Config paths whose only provider is a BUILD platform overlay source
+        # that does not exist for this platform (e.g. native HOST build where
+        # configs/host/rootfs is absent, CR-003 §9.8) are skipped instead of
+        # reported as missing; service-default-installed paths are always
+        # checked.
+        platform_rootfs = self.project.platform_configs_root()
+        overlay_sources: set[str] = set()
+        if platform_rootfs.is_dir():
+            for path in platform_rootfs.rglob("*"):
+                if path.is_file():
+                    overlay_sources.add(
+                        str(path.relative_to(platform_rootfs)).replace(os.sep, "/")
+                    )
+        provided: set[str] = set()
+        for service_id in order:
+            svc = service_manifest.get(service_id)
+            if svc is None:
+                continue
+            cv = svc.runtime.config_validation
+            if cv is not None and cv.target_path:
+                provided.add(cv.target_path)
+        skip_config_paths: set[str] = set()
+        for service_id in order:
+            svc = service_manifest.get(service_id)
+            if svc is None:
+                continue
+            for logical in svc.runtime.config_paths:
+                if logical in provided or logical.lstrip("/") in overlay_sources:
+                    continue
+                skip_config_paths.add(logical)
+        if skip_config_paths:
+            print("  config paths with absent BUILD overlay source (skipped): "
+                  + ", ".join(sorted(skip_config_paths)))
+
+        report = reconcile_install_root(
+            service_manifest=service_manifest,
+            services=order,
+            install_root=self.staging.install_root,
+            staged_files=staged,
+            owned_paths=owned,
+            previous_owned_paths=self._previous_owned_paths(),
+            skip_config_paths=skip_config_paths,
+        )
+        print(f"  {report.status}: {len(report.checked_units)} unit(s), "
+              f"{len(report.checked_configs)} config path(s), "
+              f"{len(report.unknown_assets)} unowned asset(s)")
+        for warning in report.warnings:
+            print(f"    WARN: {warning}")
+        return report
+
     def _apply_config_overlay(
         self,
         service_manifest: ServiceManifest,
         service_results: list[ServiceResult],
+        claimed_paths: dict[str, str] | None = None,
     ):
         """Apply the platform config overlay to install-root (设计 §9.3)."""
         deployment = self.project.load_config_deployment_manifest()
@@ -675,6 +946,7 @@ class BuildOrchestrator:
             service_manifest=service_manifest,
             project_root=self.project.root,
             state_dir=self.staging.manifests_dir,
+            claimed_paths=claimed_paths,
         )
         report = overlay.apply(file_owners)
         overlay.check_report(report)
@@ -690,6 +962,7 @@ class BuildOrchestrator:
         git_commit: str,
         service_results: list[ServiceResult],
         overlay_report=None,
+        assembly_report: AssemblyReport | None = None,
     ) -> ArtifactManifest:
         """Generate the artifact manifest from staging files."""
         platform_manifest = self.project.load_platform_manifest()
@@ -734,10 +1007,42 @@ class BuildOrchestrator:
                     result.id, target_str, "0.1.0", comp_name, comp_staging,
                 )
 
+        previous_entries = self._previous_artifact_entries()
+        overlay_owned: dict[str, Any] = {}
+        if overlay_report is not None:
+            for rec in overlay_report.overlaid:
+                overlay_owned[rec.logical_path.lstrip("/")] = rec
         for staged in self.staging.scan_files():
             owner_info = file_owners.get(staged.rel_path)
-            if owner_info:
+            build_prov = None
+            if assembly_report is not None and staged.rel_path.startswith("rootfs/"):
+                build_prov = assembly_report.build_owned_paths.get(
+                    staged.rel_path[len("rootfs/"):]
+                )
+            previous = previous_entries.get(staged.rel_path)
+            if build_prov is not None:
+                svc_id, target, version, component, staging = (
+                    "build",
+                    RELEASE_SET_OWNER_TARGET,
+                    "0.1.0",
+                    RELEASE_SET_COMPONENT,
+                    "rootfs",
+                )
+            elif owner_info:
                 svc_id, target, version, component, staging = owner_info
+            elif previous is not None:
+                # Keep a previously attributed asset owned instead of `unknown`
+                svc_id = str(previous.get("owner_service", "unknown"))
+                target = str(previous.get("owner_target", "unknown"))
+                version = str(previous.get("version", "0.1.0"))
+                component = str(previous.get("install_component", "unknown"))
+                staging = str(previous.get("staging", "rootfs"))
+            elif staged.rel_path.startswith("rootfs/") and staged.rel_path[len("rootfs/"):] in overlay_owned:
+                # BUILD platform overlay output without a service installer
+                # (e.g. /etc/ccu/common.yaml) is BUILD-owned (§9.6).
+                svc_id, target, version, component, staging = (
+                    "build", "config-overlay", "0.1.0", "config-overlay", "rootfs",
+                )
             else:
                 svc_id, target, version, component, staging = (
                     "unknown", "unknown", "unknown", "unknown", "unknown",
@@ -751,7 +1056,23 @@ class BuildOrchestrator:
                 git_commit=git_commit,
                 install_component=component,
                 staging=staging,
+                source=build_prov["source"] if build_prov else "",
+                source_sha256=build_prov["source_sha256"] if build_prov else "",
+                mode=build_prov["mode"] if build_prov else "",
+                referenced_by=(
+                    [r for r in build_prov.get("referenced_by", "").split(",") if r]
+                    if build_prov else []
+                ),
             )
+
+        if assembly_report is not None and assembly_report.release_set is not None:
+            manifest.release_set = {
+                "id": assembly_report.release_set,
+                "requested_services": list(assembly_report.requested_services),
+                "expanded_services": list(assembly_report.expanded_services),
+                "systemd_units": list(assembly_report.ordered_units),
+                "aggregation_status": assembly_report.aggregation_status,
+            }
 
         manifest.check_conflicts()
         if overlay_report is not None:

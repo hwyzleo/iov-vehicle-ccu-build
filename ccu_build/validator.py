@@ -16,12 +16,21 @@ schema validator and pure-graph analyser cannot cover:
 
 from __future__ import annotations
 
+import re
 import stat
 from pathlib import Path
 
+from .assetcheck import dropin_baseline_unit
 from .errors import ValidationFailure
 from .graph import DependencyGraph
-from .manifest import ServiceManifest, Project, DependencyLock
+from .manifest import (
+    RELEASE_SET_AGGREGATION_TARGET,
+    DependencyLock,
+    Project,
+    ServiceManifest,
+)
+
+_UNIT_NAME_RE = re.compile(r"^[A-Za-z0-9@:_.+-]+$")
 
 # Well-known systemd targets that services may legitimately depend on
 _SYSTEMD_EXTERNAL_TARGETS = frozenset({
@@ -258,6 +267,88 @@ def validate_config_validation(manifest: ServiceManifest) -> None:
         )
 
 
+def validate_release_set_assets(manifest: ServiceManifest) -> None:
+    """Validate release-set aggregation units and platform assets.
+
+    Covers CCU-BUILD-DSN-CR-004 §3.3/§4.2/§3.2 manifest-side rules:
+      * ``ccu.target`` is BUILD-reserved and must not be service-declared;
+      * unit names must be safe basenames (no whitespace/path/``..``);
+      * ``runtime.platform_assets[]`` entries must be machine-readable,
+        path-safe, one-to-one (target == "/" + source), use a declared
+        validator and map drop-ins to the service's own baseline unit.
+    """
+    violations: list[str] = []
+    for svc in manifest:
+        for unit in svc.runtime.systemd_units:
+            if unit == RELEASE_SET_AGGREGATION_TARGET:
+                violations.append(
+                    f"Service '{svc.id}' must not declare "
+                    f"'{RELEASE_SET_AGGREGATION_TARGET}' (BUILD-reserved "
+                    f"release-set aggregation target)"
+                )
+                continue
+            if not _UNIT_NAME_RE.match(unit) or "/" in unit or ".." in unit:
+                violations.append(
+                    f"Service '{svc.id}' declares illegal unit name '{unit}' "
+                    f"(basename only, no whitespace/path/'..')"
+                )
+
+        seen_targets: set[str] = set()
+        for asset in svc.runtime.platform_assets:
+            if asset.source.startswith("/"):
+                violations.append(
+                    f"Service '{svc.id}' platform asset source must be relative "
+                    f"to configs/<platform>/rootfs: '{asset.source}'"
+                )
+            if "\\" in asset.source or ".." in asset.source.split("/"):
+                violations.append(
+                    f"Service '{svc.id}' platform asset source '{asset.source}' "
+                    f"is not a safe POSIX path"
+                )
+            if asset.target in seen_targets:
+                violations.append(
+                    f"Service '{svc.id}' declares platform asset target "
+                    f"'{asset.target}' more than once"
+                )
+            seen_targets.add(asset.target)
+            if not asset.target.startswith("/"):
+                violations.append(
+                    f"Service '{svc.id}' platform asset target must be an "
+                    f"absolute rootfs logical path: '{asset.target}'"
+                )
+            elif asset.target != "/" + asset.source.lstrip("/"):
+                violations.append(
+                    f"Service '{svc.id}' platform asset target '{asset.target}' "
+                    f"must correspond one-to-one with source '{asset.source}'"
+                )
+            if asset.validation == "vsomeip-dropin":
+                baseline = dropin_baseline_unit(asset.target)
+                if baseline is None:
+                    violations.append(
+                        f"Service '{svc.id}' vsomeip drop-in target "
+                        f"'{asset.target}' is not under a '*.service.d' directory"
+                    )
+                elif baseline not in svc.runtime.systemd_units:
+                    violations.append(
+                        f"Service '{svc.id}' vsomeip drop-in target "
+                        f"'{asset.target}' must correspond to its own baseline "
+                        f"unit '{baseline}'"
+                    )
+            if asset.validation == "vsomeip-json" and not asset.target.startswith(
+                "/etc/ccu/"
+            ):
+                violations.append(
+                    f"Service '{svc.id}' vsomeip-json asset target must be under "
+                    f"/etc/ccu/: '{asset.target}'"
+                )
+    if violations:
+        raise ValidationFailure(
+            f"release-set unit/asset validation failed "
+            f"({len(violations)} violation(s))",
+            violations,
+        )
+
+
 def validate_all(
     manifest: ServiceManifest, project_root: Path, lock: DependencyLock | None = None
 ) -> list[str]:
@@ -306,5 +397,8 @@ def validate_all(
 
     # 8. config_validation declarations (CR-003 §9.5)
     validate_config_validation(manifest)
+
+    # 9. release-set aggregation units and platform assets (CR-004 §3-§5)
+    validate_release_set_assets(manifest)
 
     return warnings

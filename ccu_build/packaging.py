@@ -35,6 +35,8 @@ class PackageMetadata:
     artifact_count: int
     package_sha256: str = ""
     rollback_info: dict[str, Any] | None = None
+    # CCU-BUILD-DSN-CR-004 §7.2: release-set evidence (None for non-set builds).
+    release_set: dict[str, Any] | None = None
 
 
 class Packager:
@@ -70,6 +72,9 @@ class Packager:
         with open(artifact_manifest_path, encoding="utf-8") as f:
             artifact_manifest = json.load(f)
 
+        release_set = artifact_manifest.get("release_set")
+        self._check_release_set_consistency(artifact_manifest, release_set)
+
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         pkg_filename = f"{name}-{version}-{timestamp}.tar.gz"
         pkg_path = self.staging.packages_dir / pkg_filename
@@ -83,6 +88,7 @@ class Packager:
             created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             artifact_manifest_path=str(artifact_manifest_path.relative_to(self.staging.root)),
             artifact_count=len(artifact_manifest.get("artifacts", [])),
+            release_set=release_set,
             rollback_info={
                 "previous_version": None,
                 "backup_path": None,
@@ -120,3 +126,55 @@ class Packager:
         print(f"  Artifacts: {metadata.artifact_count}")
 
         return pkg_path
+
+    def _check_release_set_consistency(
+        self, artifact_manifest: dict[str, Any], release_set: dict[str, Any] | None
+    ) -> None:
+        """Refuse to package an inconsistent/stale release-set (§7.2)."""
+        target = self.staging.install_root / "usr/lib/systemd/system/ccu.target"
+        artifacts = artifact_manifest.get("artifacts", []) or []
+        unowned = [
+            a.get("path", "") for a in artifacts
+            if str(a.get("owner_service", "")) in ("", "unknown")
+        ]
+        if unowned:
+            raise PackageError(
+                "Refusing to package artifacts with unknown owner: "
+                + ", ".join(sorted(unowned))
+            )
+        if not release_set:
+            if target.is_file():
+                raise PackageError(
+                    "Non-release-set build but staging still contains the "
+                    "release-set aggregation target usr/lib/systemd/system/ccu.target"
+                )
+            return
+        units = list(release_set.get("systemd_units") or [])
+        status = release_set.get("aggregation_status")
+        if units:
+            if not target.is_file():
+                raise PackageError(
+                    "Artifact manifest records release-set units "
+                    f"{units} but the aggregation target is missing from staging"
+                )
+        elif status != "empty":
+            raise PackageError(
+                f"Artifact manifest release-set aggregation status '{status}' "
+                f"records no units; expected 'empty'"
+            )
+        evidence_paths = {
+            "usr/lib/systemd/system/ccu.target" if units else ""
+        }
+        recorded = {
+            str(a.get("path", "")) for a in artifacts
+            if str(a.get("owner_service", "")) == "build"
+        }
+        missing = {
+            p for p in evidence_paths
+            if p and f"rootfs/{p}" not in recorded
+        }
+        if missing:
+            raise PackageError(
+                "BUILD-owned release-set file(s) not recorded in the artifact "
+                "manifest: " + ", ".join(sorted(missing))
+            )

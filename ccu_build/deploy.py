@@ -31,9 +31,10 @@ from pathlib import Path
 from typing import Any
 
 from .errors import CcuBuildError
-from .manifest import Project
+from .manifest import Project, RELEASE_SET_AGGREGATION_TARGET
 from .graph import DependencyGraph
 from .staging import sha256_file
+from .unitcheck import load_aggregation_target_units
 
 
 @dataclass
@@ -128,9 +129,17 @@ class Deployer:
     # -- restart order ----------------------------------------------------
 
     def _ordered_units(self, payload_root: Path) -> list[str]:
-        """Return systemd units present in the payload, in dependency order."""
+        """Return systemd units present in the payload, in dependency order.
+
+        The release-set aggregation target is BUILD-owned and is NOT a
+        ``.service``: it never replaces per-service dependency ordering,
+        health checks or rollback (CCU-BUILD-RELEASE-REQ-004).
+        """
         unit_dir = payload_root / "usr" / "lib" / "systemd" / "system"
-        present = {p.name for p in unit_dir.glob("*.service")} if unit_dir.is_dir() else set()
+        present = {
+            p.name for p in unit_dir.glob("*.service")
+            if p.name != RELEASE_SET_AGGREGATION_TARGET
+        } if unit_dir.is_dir() else set()
         if not present:
             return []
         try:
@@ -155,11 +164,21 @@ class Deployer:
     # -- config deploy plan ----------------------------------------------
 
     def build_deploy_plan(self, payload_root: Path) -> dict[str, Any]:
-        """Enumerate /etc/ccu/** payload files and classify by deploy policy.
+        """Enumerate policy-covered payload files and classify by policy.
 
-        Forms the create/replace/preserve plan (设计 §9.7). Provisioning /
-        device-managed content is classified preserve and recorded as
-        excluded so it never enters backup or report output.
+        Forms the create/replace/preserve plan (设计 §9.7).
+        CCU-BUILD-RELEASE-REQ-004 extends the original ``/etc/ccu/**`` scope
+        to *every* payload file covered by an explicit deploy policy, so
+        BUILD-owned runtime assets (vsomeip drop-ins, shared JSON) are
+        installed and rolled back as release-managed files.
+
+        Rules kept unchanged:
+          * unmatched ``/etc/ccu/**`` still defaults to ``preserve``;
+          * provisioning / device-managed content is preserved and excluded
+            from backup and report output;
+          * an *unauthorized* runtime asset (a platform-style runtime path not
+            covered by any explicit rule) is never silently replaced - it is
+            recorded as ``unauthorized`` and treated as preserve.
         """
         from .config import DeployPolicyResolver
 
@@ -171,46 +190,66 @@ class Deployer:
         replace: list[dict[str, str]] = []
         preserve: list[dict[str, str]] = []
         excluded: list[dict[str, str]] = []
-        ccu_root = payload_root / "etc" / "ccu"
-        if ccu_root.is_dir():
-            for path in sorted(ccu_root.rglob("*")):
-                if not path.is_file():
-                    continue
-                rel = str(path.relative_to(payload_root)).replace(os.sep, "/")
-                logical = "/" + rel
-                try:
-                    rule = resolver.resolve(logical)
-                except Exception:
-                    rule = None
-                if rule is None:
+        unauthorized: list[dict[str, str]] = []
+
+        def _runtime_asset(logical: str) -> bool:
+            return (
+                logical.startswith("/usr/lib/systemd/system/")
+                and ".d/" in logical
+            ) or logical.startswith("/etc/ccu/someip/")
+
+        for path in sorted(payload_root.rglob("*")):
+            if not path.is_file() and not path.is_symlink():
+                continue
+            rel = str(path.relative_to(payload_root)).replace(os.sep, "/")
+            logical = "/" + rel
+            try:
+                rule = resolver.resolve(logical)
+            except Exception:
+                rule = None
+            if rule is None:
+                if logical.startswith("/etc/ccu/"):
                     preserve.append({
                         "path": logical, "deploy_policy": "preserve",
                         "reason": "unmatched default preserve",
                     })
-                    continue
-                entry = {
-                    "path": logical,
-                    "deploy_policy": rule.deploy_policy,
-                    "owner": rule.owner,
-                    "category": rule.category,
-                }
-                if rule.owner == "provisioning":
-                    excluded.append(entry)
-                if rule.deploy_policy == "replace":
-                    replace.append(entry)
-                elif rule.deploy_policy == "create_if_missing":
-                    create.append(entry)
-                else:
-                    preserve.append(entry)
+                elif _runtime_asset(logical):
+                    unauthorized.append({
+                        "path": logical, "deploy_policy": "preserve",
+                        "reason": "unauthorized runtime asset",
+                    })
+                    preserve.append({
+                        "path": logical, "deploy_policy": "preserve",
+                        "reason": "unauthorized runtime asset",
+                    })
+                continue
+            entry = {
+                "path": logical,
+                "deploy_policy": rule.deploy_policy,
+                "owner": rule.owner,
+                "category": rule.category,
+            }
+            if rule.owner == "provisioning" or rule.category == "device-managed":
+                excluded.append(entry)
+                preserve.append(entry)
+                continue
+            if rule.deploy_policy == "replace":
+                replace.append(entry)
+            elif rule.deploy_policy == "create_if_missing":
+                create.append(entry)
+            else:
+                preserve.append(entry)
         return {
             "create": create,
             "replace": replace,
             "preserve": preserve,
             "excluded_provisioning": excluded,
+            "unauthorized": unauthorized,
             "summary": {
                 "create": len(create),
                 "replace": len(replace),
                 "preserve": len(preserve),
+                "unauthorized": len(unauthorized),
             },
         }
 
@@ -297,6 +336,123 @@ class Deployer:
                 return c
         raise CcuBuildError(f"Package has no install-root: {package_path}")
 
+    # -- release-set pre-check --------------------------------------------
+
+    def _check_release_set(self, payload_root: Path) -> DeployStep:
+        """Verify the package's release-set evidence against its payload (§7.3).
+
+        The package must prove the same release-set composition that was
+        installed: package metadata, artifact manifest and the actual
+        ``ccu.target`` Wants=/After= set must agree with the ``.service``
+        payload. Mismatch fails the pre-check; the aggregation target never
+        replaces per-service start/stop ordering or rollback.
+        """
+        import json as _json
+
+        step = DeployStep(name="release-set-check")
+        start = time.time()
+        step.status = "success"
+
+        manifests_dir = payload_root.parent / "manifests"
+        manifest_path = manifests_dir / "artifact-manifest.json"
+        metadata_path = manifests_dir / "package.json"
+        if not manifest_path.is_file():
+            step.status = "failed"
+            step.message = f"Artifact manifest missing from package: {manifest_path}"
+            step.duration_seconds = time.time() - start
+            return step
+        try:
+            manifest = _json.loads(manifest_path.read_text(encoding="utf-8"))
+            metadata = (
+                _json.loads(metadata_path.read_text(encoding="utf-8"))
+                if metadata_path.is_file() else {}
+            )
+        except (OSError, _json.JSONDecodeError) as exc:
+            step.status = "failed"
+            step.message = f"Cannot read package evidence: {exc}"
+            step.duration_seconds = time.time() - start
+            return step
+
+        release_set = manifest.get("release_set")
+        target = payload_root / "usr/lib/systemd/system" / RELEASE_SET_AGGREGATION_TARGET
+        unit_dir = payload_root / "usr/lib/systemd/system"
+        payload_units = sorted(
+            p.name for p in unit_dir.glob("*.service")
+        ) if unit_dir.is_dir() else []
+
+        if not release_set:
+            if target.is_file():
+                step.status = "failed"
+                step.message = (
+                    "Non-release-set package carries the release-set "
+                    "aggregation target ccu.target"
+                )
+            else:
+                step.message = "no release-set evidence (single-service/all build)"
+            step.duration_seconds = time.time() - start
+            return step
+
+        metadata_release_set = metadata.get("release_set")
+        if metadata_release_set != release_set:
+            step.status = "failed"
+            step.message = (
+                "package.json release_set evidence does not match the "
+                "artifact manifest"
+            )
+            step.duration_seconds = time.time() - start
+            return step
+
+        units = list(release_set.get("systemd_units") or [])
+        if not units:
+            if release_set.get("aggregation_status") != "empty" or target.is_file():
+                step.status = "failed"
+                step.message = (
+                    "Empty release-set aggregation recorded but a target is "
+                    "present or the status is not 'empty'"
+                )
+            else:
+                step.message = "empty release-set aggregation (no daemon units)"
+            step.duration_seconds = time.time() - start
+            return step
+
+        if not target.is_file():
+            step.status = "failed"
+            step.message = (
+                "Release-set evidence declares units "
+                f"{units} but ccu.target is missing from the payload"
+            )
+            step.duration_seconds = time.time() - start
+            return step
+
+        wants, after = load_aggregation_target_units(payload_root)
+        problems: list[str] = []
+        if wants != units:
+            problems.append(f"Wants= {wants} != release-set units {units}")
+        if after != units:
+            problems.append(f"After= {after} != release-set units {units}")
+        missing_from_payload = [u for u in units if u not in payload_units]
+        if missing_from_payload:
+            problems.append(
+                "release-set unit(s) missing from the .service payload: "
+                + ", ".join(missing_from_payload)
+            )
+        undeclared = [u for u in payload_units if u not in units]
+        if undeclared:
+            problems.append(
+                ".service payload carries units outside the release-set "
+                "aggregation: " + ", ".join(undeclared)
+            )
+        if problems:
+            step.status = "failed"
+            step.message = "; ".join(problems)
+        else:
+            step.message = (
+                f"release-set '{release_set.get('id')}' verified: "
+                f"{len(units)} unit(s) consistent with payload"
+            )
+        step.duration_seconds = time.time() - start
+        return step
+
     # -- run --------------------------------------------------------------
 
     def _run(self, cmd: str) -> tuple[int, str]:
@@ -323,6 +479,15 @@ class Deployer:
 
         with tempfile.TemporaryDirectory(prefix="ccu-deploy-") as tmp:
             payload_root = self._extract(package_path, Path(tmp))
+            release_set_step = self._check_release_set(payload_root)
+            report.steps.append(release_set_step)
+            if release_set_step.status == "failed":
+                report.status = "failed"
+                report.errors.append(
+                    f"release-set-check: {release_set_step.message}"
+                )
+                report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                return report
             report.deploy_plan = self.build_deploy_plan(payload_root)
             plan = self.build_plan(payload_root)
 

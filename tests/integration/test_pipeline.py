@@ -60,9 +60,11 @@ class TestEndToEndValidation:
         lock = project.load_dependency_lock()
         graph = DependencyGraph(service_manifest, lock)
         order = graph.build_order()
-        assert len(order) == 4
+        assert len(order) == 7
         assert order.index("ccu-hello-lib") < order.index("ccu-hello-cli")
         assert order.index("framework") < order.index("framework-consumer")
+        assert order.index("ccu-sec") < order.index("ccu-diag")
+        assert order.index("ccu-diag") < order.index("ccu-fota")
 
         # 8. Release set closure
         rs = release_set_manifest.get("ccu-dev-minimal")

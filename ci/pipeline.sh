@@ -21,6 +21,10 @@
 #   -j, --jobs <n>     Parallel build jobs (default: 4).
 #   --build-only       Run build + package but skip the final verify step.
 #   --dry-run          Dry-run only (no actual compilation; schema + plan).
+#   --allow-missing-platform-assets
+#                      Development-only exemption for a missing required platform
+#                      runtime asset (e.g. controlled vsomeip.json). Rejected for
+#                      release profiles (CCU-BUILD-DSN-CR-004 §11).
 #   -h, --help         Show this help and exit.
 set -euo pipefail
 
@@ -35,6 +39,7 @@ SERVICE=""
 JOBS=4
 BUILD_ONLY=0
 DRY_RUN=0
+ALLOW_MISSING_ASSETS=0
 
 usage() {
     sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -54,6 +59,7 @@ while [ $# -gt 0 ]; do
                         JOBS="$2"; shift 2 ;;
         --build-only)   BUILD_ONLY=1; shift ;;
         --dry-run)      DRY_RUN=1; shift ;;
+        --allow-missing-platform-assets) ALLOW_MISSING_ASSETS=1; shift ;;
         -h|--help)      usage; exit 0 ;;
         *)              echo "ERROR: unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -84,9 +90,17 @@ python3 -m ccu_build validate --platform "$PLATFORM"
 DRY_FLAG=""
 if [ "$DRY_RUN" -eq 1 ]; then
     DRY_FLAG="--dry-run"
+fi
+ASSET_FLAG=""
+if [ "$ALLOW_MISSING_ASSETS" -eq 1 ]; then
+    ASSET_FLAG="--allow-missing-platform-assets"
+fi
+
+# Steps 2-6: Build, install, ELF check, package
+if [ "$DRY_RUN" -eq 1 ]; then
     echo ""
     echo "[2-6/7] Build, install, ELF check, package (DRY-RUN)"
-    python3 -m ccu_build build "${SCOPE_ARGS[@]}" --platform "$PLATFORM" --profile "$PROFILE" --jobs "$JOBS" $DRY_FLAG
+    python3 -m ccu_build build "${SCOPE_ARGS[@]}" --platform "$PLATFORM" --profile "$PROFILE" --jobs "$JOBS" $DRY_FLAG $ASSET_FLAG
     echo ""
     echo " CI Pipeline: SUCCESS (dry-run)"
     exit 0
@@ -96,7 +110,7 @@ echo ""
 echo "[2-6/7] Build, install, ELF check, package"
 # For target builds, run inside Docker; for host builds, run natively.
 if [ "$PLATFORM" = "host" ]; then
-    python3 -m ccu_build build "${SCOPE_ARGS[@]}" --platform "$PLATFORM" --profile "$PROFILE" --jobs "$JOBS"
+    python3 -m ccu_build build "${SCOPE_ARGS[@]}" --platform "$PLATFORM" --profile "$PROFILE" --jobs "$JOBS" $ASSET_FLAG
     python3 -m ccu_build package --platform "$PLATFORM" --profile "$PROFILE"
 else
     # Target build: requires Docker with cross-compile environment.
@@ -118,7 +132,7 @@ else
         --platform linux/arm64 \
         "$IMAGE_NAME" \
         bash -c "cd '$CONTAINER_CCU_ROOT' && \
-            python3 -m ccu_build build ${SCOPE_ARGS[*]} --profile $PROFILE --jobs $JOBS && \
+            python3 -m ccu_build build ${SCOPE_ARGS[*]} --profile $PROFILE --jobs $JOBS $ASSET_FLAG && \
             python3 -m ccu_build package --platform $PLATFORM --profile $PROFILE"
 fi
 

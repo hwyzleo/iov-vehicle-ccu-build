@@ -63,6 +63,15 @@ class PackageError(CcuBuildError):
     """Packaging error."""
 
 
+class AssemblyError(CcuBuildError):
+    """Release-set assembly error (closure, unit ownership, platform assets)."""
+
+    def __init__(self, message: str, errors: list | None = None):
+        super().__init__(message)
+        self.errors = errors or []
+
+
+
 class ConfigError(CcuBuildError):
     """Configuration release error (overlay, validation, ownership)."""
 

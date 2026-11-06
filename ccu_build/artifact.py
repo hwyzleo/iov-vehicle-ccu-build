@@ -47,6 +47,11 @@ class ArtifactEntry:
     elf_info: dict[str, Any] | None = None
     # Config release provenance (设计 §9.6); None for non-config files.
     config_provenance: dict[str, Any] | None = None
+    # BUILD-owned release-set assets (CCU-BUILD-DSN-CR-004 §7.2).
+    source: str = ""
+    source_sha256: str = ""
+    mode: str = ""
+    referenced_by: list[str] = field(default_factory=list)
 
 
 class ArtifactManifest:
@@ -69,6 +74,8 @@ class ArtifactManifest:
         # Consumer evidence (设计 §8.6): SDK-providing service id -> sorted list
         # of downstream service ids that consume it via service_dependencies.
         self.sdk_consumers: dict[str, list[str]] = {}
+        # Release-set evidence (CCU-BUILD-DSN-CR-004 §7.2); None for non-set builds.
+        self.release_set: dict[str, Any] | None = None
         self.generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def add_entry(self, entry: ArtifactEntry) -> None:
@@ -94,6 +101,10 @@ class ArtifactManifest:
         git_commit: str,
         install_component: str = "unknown",
         staging: str = "unknown",
+        source: str = "",
+        source_sha256: str = "",
+        mode: str = "",
+        referenced_by: list[str] | None = None,
     ) -> None:
         """Add a staged file to the manifest, classifying and inspecting it."""
         cls = classify_file(staged.full_path)
@@ -114,6 +125,10 @@ class ArtifactManifest:
             install_component=install_component,
             staging=staging,
             elf_info=elf_info,
+            source=source,
+            source_sha256=source_sha256,
+            mode=mode,
+            referenced_by=list(referenced_by or []),
         )
         self.add_entry(entry)
 
@@ -204,6 +219,7 @@ class ArtifactManifest:
             },
             "dependency_lock": self._dependency_lock_summary(),
             "sdk_consumers": self.sdk_consumers,
+            "release_set": self.release_set,
             "artifact_count": len(self.entries),
             "artifacts": [asdict(e) for e in self.entries],
         }

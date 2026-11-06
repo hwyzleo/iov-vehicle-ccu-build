@@ -79,11 +79,12 @@ class TestServiceManifest:
     def test_load_service_manifest(self, project_root: Path):
         project = Project(project_root, platform="ccu-dev")
         manifest = project.load_service_manifest()
-        assert len(manifest) == 4
-        assert "ccu-hello-lib" in manifest
-        assert "ccu-hello-cli" in manifest
-        assert "framework" in manifest
-        assert "framework-consumer" in manifest
+        assert len(manifest) == 7
+        for service_id in (
+            "ccu-hello-lib", "ccu-hello-cli", "framework",
+            "framework-consumer", "ccu-sec", "ccu-diag", "ccu-fota",
+        ):
+            assert service_id in manifest
 
     def test_service_properties(self, project_root: Path):
         project = Project(project_root, platform="ccu-dev")
@@ -108,13 +109,68 @@ class TestServiceManifest:
     def test_release_set_manifest(self, project_root: Path):
         project = Project(project_root, platform="ccu-dev")
         rs = project.load_release_set_manifest()
-        assert len(rs) == 2
+        assert len(rs) == 3
         minimal = rs.get("ccu-dev-minimal")
         assert minimal is not None
         assert minimal.services == ["ccu-hello-lib", "ccu-hello-cli"]
         framework = rs.get("ccu-dev-framework")
         assert framework is not None
         assert framework.services == ["framework", "framework-consumer"]
+        fota = rs.get("ccu-dev-fota")
+        assert fota is not None
+        assert fota.services == ["framework", "ccu-sec", "ccu-diag", "ccu-fota"]
+
+    def test_ccu_fota_runtime_contract(self, project_root: Path):
+        """CCU-FOTA-DSN-CR-008 §12 + CR-004 §3.3: ccu-fota 登记契约与拓扑。"""
+        project = Project(project_root, platform="ccu-dev")
+        manifest = project.load_service_manifest()
+        fota = manifest.get("ccu-fota")
+        assert fota is not None
+        assert fota.kind == "daemon"
+        assert fota.build.targets == ["ccu-fota"]
+        assert fota.build.service_dependencies == ["framework", "ccu-diag"]
+        assert fota.build.target_dependencies == ["yaml-cpp"]
+        assert [c.name for c in fota.build.install_components] == ["ccu-fota-runtime"]
+        assert fota.build.install_components[0].staging == "rootfs"
+        assert fota.runtime.systemd_units == ["ccu-fota.service"]
+        assert "/etc/ccu/conf.d/fota.yaml" in fota.runtime.config_paths
+        assert fota.runtime.config_validation is not None
+        assert fota.runtime.config_validation.target_path == "/etc/ccu/conf.d/fota.yaml"
+        assert fota.runtime.persistent_paths == ["/var/lib/ccu/fota"]
+
+    def test_real_service_registration(self, project_root: Path):
+        """CCU-BUILD-RELEASE-REQ-001: 真实服务固定 revision 与拓扑。"""
+        project = Project(project_root, platform="ccu-dev")
+        manifest = project.load_service_manifest()
+
+        sec = manifest.get("ccu-sec")
+        assert sec is not None
+        assert sec.revision and len(sec.revision) == 40
+        assert sec.build.service_dependencies == ["framework"]
+        assert sec.runtime.systemd_units == ["ccu-sec.service"]
+
+        diag = manifest.get("ccu-diag")
+        assert diag is not None
+        assert diag.revision and len(diag.revision) == 40
+        assert diag.build.service_dependencies == ["framework", "ccu-sec"]
+        assert diag.runtime.systemd_units == ["ccu-diag.service"]
+
+        for svc in (sec, diag, manifest.get("ccu-fota")):
+            assert svc is not None
+            # SEC must not depend on consumers; DIAG/FOTA express their own
+            # direction only (CR-004 §3.3).
+            assert "ccu-fota" not in svc.build.service_dependencies
+            assert "ccu.target" not in svc.runtime.systemd_units
+            assets = {a.target: a for a in svc.runtime.platform_assets}
+            assert "etc/ccu/someip/vsomeip.json" in {
+                a.source for a in svc.runtime.platform_assets
+            }
+            dropin = assets.get(
+                f"/usr/lib/systemd/system/{svc.runtime.systemd_units[0]}.d/vsomeip.conf"
+            )
+            assert dropin is not None
+            assert dropin.validation == "vsomeip-dropin"
+            assert dropin.required is True
 
     def test_dependency_lock_yaml_cpp(self, project_root: Path):
         """CCU-BUILD-DSN-CR-002: yaml-cpp is the framework's controlled TARGET dep."""

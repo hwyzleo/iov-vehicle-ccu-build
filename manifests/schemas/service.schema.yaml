@@ -166,6 +166,34 @@ properties:
                 type: array
                 items:
                   type: string
+              # CCU-BUILD-DSN-CR-004 §3.2: BUILD-owned platform runtime assets
+              # delivered only when the declaring service is in the selected
+              # release-set closure. source/target must correspond one-to-one;
+              # validation is an explicit enum (never inferred from extension).
+              platform_assets:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - source
+                    - target
+                    - required
+                    - validation
+                  additionalProperties: false
+                  properties:
+                    source:
+                      type: string
+                      minLength: 1
+                    target:
+                      type: string
+                      minLength: 1
+                    required:
+                      type: boolean
+                    validation:
+                      type: string
+                      enum:
+                        - vsomeip-dropin
+                        - vsomeip-json
               required_devices:
                 type: array
                 items:

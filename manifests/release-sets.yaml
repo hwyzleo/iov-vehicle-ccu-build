@@ -20,3 +20,17 @@ release_sets:
     services:
       - framework
       - framework-consumer
+
+  # CCU-BUILD-DSN-CR-004 §3.3: 真实服务发布集合。
+  # 即使调用方只指定部分服务，assembler 也使用 build_order() 的完整闭包；
+  # 聚合 target 按拓扑序为 ccu-sec.service ccu-diag.service ccu-fota.service
+  # （framework 为 library，无 unit）。
+  ccu-dev-fota:
+    description: "CCU framework + ccu-sec + ccu-diag + ccu-fota release set (CCU-BUILD-DSN-CR-004)"
+    platform: ccu-dev
+    profile: release
+    services:
+      - framework
+      - ccu-sec
+      - ccu-diag
+      - ccu-fota

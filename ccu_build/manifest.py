@@ -19,6 +19,15 @@ import yaml
 from .errors import ManifestError, SchemaValidationError
 
 
+# Validators authorized for runtime.platform_assets[].validation
+# (CCU-BUILD-DSN-CR-004 §3.2). Never inferred from a file extension.
+PLATFORM_ASSET_VALIDATORS = frozenset({"vsomeip-dropin", "vsomeip-json"})
+
+# BUILD-reserved release-set aggregation target (CCU-BUILD-DSN-CR-004 §3.3).
+# No service may declare it as its own systemd unit or install output.
+RELEASE_SET_AGGREGATION_TARGET = "ccu.target"
+
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -77,6 +86,57 @@ class ConfigValidation:
 
 
 @dataclass
+class PlatformAsset:
+    """A BUILD-owned platform runtime asset (CCU-BUILD-DSN-CR-004 §3.2).
+
+    ``source`` is a POSIX path relative to ``configs/<platform>/rootfs``;
+    ``target`` is the final rootfs logical path and must correspond one-to-one
+    with ``source``. ``validation`` is an explicit enum
+    (``vsomeip-dropin`` | ``vsomeip-json``) - never guessed from a file
+    extension.
+    """
+
+    source: str
+    target: str
+    required: bool = True
+    validation: str = ""
+
+
+def _parse_platform_asset(item: Any, service_id: str) -> PlatformAsset:
+    if not isinstance(item, dict):
+        raise SchemaValidationError(
+            f"Service '{service_id}' runtime.platform_assets entry must be an "
+            f"object with source/target/required/validation"
+        )
+    missing = [
+        key for key in ("source", "target", "validation")
+        if not isinstance(item.get(key), str) or not item.get(key)
+    ]
+    if missing:
+        raise SchemaValidationError(
+            f"Service '{service_id}' runtime.platform_assets entry requires "
+            f"non-empty {', '.join(missing)}"
+        )
+    if "required" not in item or not isinstance(item["required"], bool):
+        raise SchemaValidationError(
+            f"Service '{service_id}' runtime.platform_assets entry requires a "
+            f"boolean 'required'"
+        )
+    validation = item["validation"]
+    if validation not in PLATFORM_ASSET_VALIDATORS:
+        raise SchemaValidationError(
+            f"Service '{service_id}' platform asset validation '{validation}' "
+            f"is not one of: {', '.join(sorted(PLATFORM_ASSET_VALIDATORS))}"
+        )
+    return PlatformAsset(
+        source=item["source"],
+        target=item["target"],
+        required=bool(item["required"]),
+        validation=validation,
+    )
+
+
+@dataclass
 class RuntimeConfig:
     """Runtime configuration for a single service."""
 
@@ -89,6 +149,8 @@ class RuntimeConfig:
     persistent_paths: list[str] = field(default_factory=list)
     required_devices: list[str] = field(default_factory=list)
     capabilities: list[str] = field(default_factory=list)
+    # CCU-BUILD-DSN-CR-004 §3.2: BUILD-owned platform runtime assets.
+    platform_assets: list[PlatformAsset] = field(default_factory=list)
 
 
 @dataclass
@@ -515,7 +577,7 @@ def _parse_build_config(data: dict[str, Any]) -> BuildConfig:
     )
 
 
-def _parse_runtime_config(data: dict[str, Any]) -> RuntimeConfig:
+def _parse_runtime_config(data: dict[str, Any], service_id: str = "") -> RuntimeConfig:
     cv_data = data.get("config_validation")
     config_validation: ConfigValidation | None = None
     if cv_data is not None:
@@ -526,6 +588,12 @@ def _parse_runtime_config(data: dict[str, Any]) -> RuntimeConfig:
             target_path=cv_data.get("target_path"),
             default_source=cv_data.get("default_source"),
         )
+    assets_raw = data.get("platform_assets", []) or []
+    if not isinstance(assets_raw, list):
+        raise SchemaValidationError(
+            f"Service '{service_id}' runtime.platform_assets must be an array"
+        )
+    platform_assets = [_parse_platform_asset(item, service_id) for item in assets_raw]
     return RuntimeConfig(
         systemd_units=list(data.get("systemd_units", [])),
         after=list(data.get("after", [])),
@@ -536,6 +604,7 @@ def _parse_runtime_config(data: dict[str, Any]) -> RuntimeConfig:
         persistent_paths=list(data.get("persistent_paths", [])),
         required_devices=list(data.get("required_devices", [])),
         capabilities=list(data.get("capabilities", [])),
+        platform_assets=platform_assets,
     )
 
 
@@ -550,7 +619,7 @@ def _parse_service(service_id: str, data: dict[str, Any]) -> Service:
         id=service_id,
         repository=repository or source_dir,
         build=_parse_build_config(data["build"]),
-        runtime=_parse_runtime_config(data.get("runtime", {})),
+        runtime=_parse_runtime_config(data.get("runtime", {}), service_id),
         revision=data.get("revision"),
         source_dir=source_dir,
         description=data.get("description"),

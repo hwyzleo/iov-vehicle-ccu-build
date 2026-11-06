@@ -21,6 +21,17 @@ platforms:
         owner: service
         category: release-managed
         deploy_policy: replace
+      # CCU-BUILD-DSN-CR-004 §6: BUILD-owned platform runtime assets.
+      # The ReleaseSetAssembler is their only installer; the generic config
+      # overlay skips paths it already claimed.
+      - path_glob: /usr/lib/systemd/system/*.service.d/vsomeip.conf
+        owner: build
+        category: release-managed
+        deploy_policy: replace
+      - path: /etc/ccu/someip/vsomeip.json
+        owner: build
+        category: release-managed
+        deploy_policy: replace
       - path_glob: /etc/ccu/credentials/**
         owner: provisioning
         category: device-managed

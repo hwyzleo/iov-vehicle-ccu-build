@@ -1,5 +1,15 @@
 # Prerequisites
+# 注：`*.d` 是 CMake/Make 依赖文件后缀，但它同样会匹配平台资产目录名
+# `conf.d` 与 `*.service.d`，从而把
+# configs/<platform>/rootfs/etc/ccu/conf.d/** 及
+# configs/<platform>/rootfs/usr/lib/systemd/system/*.service.d/**
+# 整体忽略掉（CCU-BUILD-DSN-CR-003 §9.2 / CR-004 §3.1 平台资产无法入库）。
+# 此处显式反忽略。
 *.d
+!configs/**/conf.d/
+!configs/**/conf.d/**
+!configs/**/*.service.d/
+!configs/**/*.service.d/**
 
 # Compiled Object files
 *.slo

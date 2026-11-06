@@ -124,3 +124,156 @@ services:
         - /var/lib/ccu/framework-consumer
       required_devices: []
       capabilities: []
+
+  # CCU-SEC 真实服务接入（CCU-SEC-DSN-CR-005 §3.2/§6.1）。
+  # 固定 commit；服务只依赖 framework，不反向依赖 consumer。
+  # ccu-sec-runtime 精确安装：usr/bin/ccu_sec、usr/lib/systemd/system/ccu-sec.service、
+  # etc/ccu/conf.d/sec.yaml、usr/share/ccu-sec/schema/sec.schema.yaml。
+  # SEC 的 baseline unit 不声明 consumer 顺序；平台 vsomeip 环境由 BUILD 拥有的
+  # drop-in/共享 JSON 交付（CCU-BUILD-DSN-CR-004 §5）。
+  ccu-sec:
+    description: "CCU security daemon (CCU-SEC-DSN-CR-005)"
+    source_dir: ../iov-vehicle-ccu-sec
+    revision: a88bac2173fba1a23e033757bb870c25516d86dc
+    kind: daemon
+    build:
+      targets:
+        - ccu_sec
+      service_dependencies:
+        - framework
+      # 真实服务 TARGET 依赖（nlohmann-json/vsomeip3/Boost/OpenSSL）由后续
+      # TARGET readiness CR 关闭并锁定；本 CR 不虚构 lock 条目。
+      target_dependencies:
+        - yaml-cpp
+      preset: ccu-dev-release
+      install_components:
+        - name: ccu-sec-runtime
+          staging: rootfs
+    runtime:
+      systemd_units:
+        - ccu-sec.service
+      after:
+        - network.target
+      smoke_test: tests/smoke/smoke-sec.sh
+      config_paths:
+        - /etc/ccu/common.yaml
+        - /etc/ccu/conf.d/sec.yaml
+      config_validation:
+        schema: config/schema/sec.schema.yaml
+        target_path: /etc/ccu/conf.d/sec.yaml
+        default_source: config/sec.default.yaml
+      persistent_paths:
+        - /var/lib/ccu/sec
+      platform_assets:
+        - source: usr/lib/systemd/system/ccu-sec.service.d/vsomeip.conf
+          target: /usr/lib/systemd/system/ccu-sec.service.d/vsomeip.conf
+          required: true
+          validation: vsomeip-dropin
+        - source: etc/ccu/someip/vsomeip.json
+          target: /etc/ccu/someip/vsomeip.json
+          required: true
+          validation: vsomeip-json
+      required_devices: []
+      capabilities: []
+
+  # CCU-DIAG 真实服务接入（CCU-DIAG-DSN-CR-009 §3.2/§6.1）。
+  # 固定 commit；DIAG 依赖 Framework SDK 并表达 DIAG→SEC 运行拓扑。
+  # ccu-diag-runtime 精确安装：usr/bin/ccu_diag、usr/lib/systemd/system/ccu-diag.service、
+  # etc/ccu/conf.d/diag.yaml、usr/share/ccu-diag/schema/diag.schema.yaml。
+  # SEC 不可用时保持既有业务降级语义（After=/Wants=，不使用 Requires=）。
+  ccu-diag:
+    description: "CCU diagnostic gateway daemon (CCU-DIAG-DSN-CR-009)"
+    source_dir: ../iov-vehicle-ccu-diag
+    revision: 2984eed91274b3ed44fd0cc0a6ef218d1e1123c4
+    kind: daemon
+    build:
+      targets:
+        - ccu_diag
+      service_dependencies:
+        - framework
+        - ccu-sec
+      target_dependencies:
+        - yaml-cpp
+      preset: ccu-dev-release
+      install_components:
+        - name: ccu-diag-runtime
+          staging: rootfs
+    runtime:
+      systemd_units:
+        - ccu-diag.service
+      after:
+        - network.target
+        - ccu-sec.service
+      smoke_test: tests/smoke/smoke-diag.sh
+      config_paths:
+        - /etc/ccu/common.yaml
+        - /etc/ccu/conf.d/diag.yaml
+      config_validation:
+        schema: config/schema/diag.schema.yaml
+        target_path: /etc/ccu/conf.d/diag.yaml
+        default_source: config/diag.default.yaml
+      persistent_paths:
+        - /var/lib/ccu/diag
+      platform_assets:
+        - source: usr/lib/systemd/system/ccu-diag.service.d/vsomeip.conf
+          target: /usr/lib/systemd/system/ccu-diag.service.d/vsomeip.conf
+          required: true
+          validation: vsomeip-dropin
+        - source: etc/ccu/someip/vsomeip.json
+          target: /etc/ccu/someip/vsomeip.json
+          required: true
+          validation: vsomeip-json
+      required_devices: []
+      capabilities: []
+
+  # CCU-FOTA 真实服务接入（CCU-FOTA-DSN-CR-008 §12）。
+  # install component ccu-fota-runtime 由服务仓库 install() 声明：
+  #   /usr/bin/ccu-fota、/usr/lib/systemd/system/ccu-fota.service、
+  #   /etc/ccu/conf.d/fota.yaml、/usr/share/ccu-fota/schema/fota.schema.yaml。
+  # 平台相关的 vsomeip drop-in/共享 JSON 属于 BUILD 拥有的平台资产
+  # （CCU-BUILD-DSN-CR-004 §5），不在服务 install 内。
+  # FOTA 表达 FOTA→DIAG 运行拓扑（After=/Wants=，不使用 Requires=）。
+  ccu-fota:
+    description: "CCU FOTA daemon + orchestrator (CCU-FOTA-DSN-CR-008 §12)"
+    source_dir: ../iov-vehicle-ccu-fota
+    revision: 2fa5f98bab3c8899af2f13916f4b84c8e2ffc0e4
+    kind: daemon
+    build:
+      targets:
+        - ccu-fota
+      service_dependencies:
+        - framework
+        - ccu-diag
+      target_dependencies:
+        - yaml-cpp
+      preset: ccu-dev-release
+      install_components:
+        - name: ccu-fota-runtime
+          staging: rootfs
+    runtime:
+      systemd_units:
+        - ccu-fota.service
+      after:
+        - network.target
+        - ccu-diag.service
+      smoke_test: tests/smoke/smoke-fota.sh
+      config_paths:
+        - /etc/ccu/common.yaml
+        - /etc/ccu/conf.d/fota.yaml
+      config_validation:
+        schema: config/schema/fota.schema.yaml
+        target_path: /etc/ccu/conf.d/fota.yaml
+        default_source: config/fota.default.yaml
+      persistent_paths:
+        - /var/lib/ccu/fota
+      platform_assets:
+        - source: usr/lib/systemd/system/ccu-fota.service.d/vsomeip.conf
+          target: /usr/lib/systemd/system/ccu-fota.service.d/vsomeip.conf
+          required: true
+          validation: vsomeip-dropin
+        - source: etc/ccu/someip/vsomeip.json
+          target: /etc/ccu/someip/vsomeip.json
+          required: true
+          validation: vsomeip-json
+      required_devices: []
+      capabilities: []

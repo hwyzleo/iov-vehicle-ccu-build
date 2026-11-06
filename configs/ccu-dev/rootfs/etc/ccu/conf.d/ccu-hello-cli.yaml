@@ -1,0 +1,6 @@
+# ccu-dev platform overlay: /etc/ccu/conf.d/ccu-hello-cli.yaml
+# （CCU-BUILD-DSN-CR-003 §9.2/§9.4：平台资产整文件覆盖服务默认模板，
+#   不执行 YAML 深度合并；本文件必须通过服务锁定的 schema 校验。）
+# 仅示例服务的平台值；真实服务的平台配置同样放在 configs/<platform>/rootfs/。
+service_name: ccu-hello
+greeting: "CCU-Hello (ccu-dev)"

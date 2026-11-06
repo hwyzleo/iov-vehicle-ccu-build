@@ -65,9 +65,12 @@ class TestTopologicalSort:
         lock = project.load_dependency_lock()
         graph = DependencyGraph(manifest, lock)
         order = graph.build_order()
-        assert len(order) == 4
+        assert len(order) == 7
         assert order.index("ccu-hello-lib") < order.index("ccu-hello-cli")
         assert order.index("framework") < order.index("framework-consumer")
+        assert order.index("framework") < order.index("ccu-fota")
+        assert order.index("ccu-sec") < order.index("ccu-diag")
+        assert order.index("ccu-diag") < order.index("ccu-fota")
 
     def test_framework_release_set_order(self, project_root: Path):
         """CCU-BUILD-DSN-CR-002: framework builds before its consumer."""

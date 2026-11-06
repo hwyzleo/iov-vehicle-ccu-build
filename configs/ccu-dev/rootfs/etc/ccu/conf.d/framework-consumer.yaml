@@ -1,0 +1,4 @@
+# ccu-dev platform overlay: /etc/ccu/conf.d/framework-consumer.yaml
+# （CCU-BUILD-DSN-CR-003 §9.2/§9.4：整文件覆盖，必须通过服务锁定 schema。）
+service_name: ccu-framework-consumer
+greeting: "CCU-Framework-Consumer (ccu-dev)"

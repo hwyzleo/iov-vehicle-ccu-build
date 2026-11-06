@@ -146,3 +146,109 @@ class TestFullValidation:
         })
         with pytest.raises(ValidationFailure):
             validate_all(manifest, Path("/tmp"), DependencyLock(dependencies={}))
+
+
+class TestReleaseSetAssetsValidation:
+    """CCU-BUILD-DSN-CR-004 §3.2/§3.3/§4.2 manifest-side rules."""
+
+    def _svc_with_runtime(self, units=None, assets=None) -> Service:
+        from ccu_build.manifest import PlatformAsset, RuntimeConfig
+        svc = _svc("svc-a")
+        svc.runtime = RuntimeConfig(
+            systemd_units=list(units or []),
+            platform_assets=[
+                PlatformAsset(
+                    source=a[0], target=a[1],
+                    required=a[2], validation=a[3],
+                ) for a in (assets or [])
+            ],
+        )
+        return svc
+
+    def test_reserved_aggregation_target_rejected(self):
+        from ccu_build.validator import validate_release_set_assets
+        manifest = ServiceManifest(services={
+            "svc-a": self._svc_with_runtime(units=["ccu.target"]),
+        })
+        with pytest.raises(ValidationFailure) as exc:
+            validate_release_set_assets(manifest)
+        assert "BUILD-reserved" in str(exc.value.details)
+
+    @pytest.mark.parametrize(
+        "unit", ["bad unit.service", "a/b.service", "../x.service", "x\ny.service"]
+    )
+    def test_illegal_unit_name_rejected(self, unit: str):
+        from ccu_build.validator import validate_release_set_assets
+        manifest = ServiceManifest(services={
+            "svc-a": self._svc_with_runtime(units=[unit]),
+        })
+        with pytest.raises(ValidationFailure):
+            validate_release_set_assets(manifest)
+
+    def test_target_must_correspond_one_to_one(self):
+        from ccu_build.validator import validate_release_set_assets
+        manifest = ServiceManifest(services={
+            "svc-a": self._svc_with_runtime(
+                units=["svc-a.service"],
+                assets=[("etc/ccu/someip/vsomeip.json",
+                         "/etc/ccu/someip/renamed.json", True,
+                         "vsomeip-json")],
+            ),
+        })
+        with pytest.raises(ValidationFailure) as exc:
+            validate_release_set_assets(manifest)
+        assert any("one-to-one" in e for e in exc.value.details)
+
+    def test_dropin_must_match_own_baseline_unit(self):
+        from ccu_build.validator import validate_release_set_assets
+        manifest = ServiceManifest(services={
+            "svc-a": self._svc_with_runtime(
+                units=["svc-a.service"],
+                assets=[("usr/lib/systemd/system/svc-b.service.d/vsomeip.conf",
+                         "/usr/lib/systemd/system/svc-b.service.d/vsomeip.conf",
+                         True, "vsomeip-dropin")],
+            ),
+        })
+        with pytest.raises(ValidationFailure) as exc:
+            validate_release_set_assets(manifest)
+        assert any("own baseline unit" in e for e in exc.value.details)
+
+    def test_absolute_source_rejected(self):
+        from ccu_build.validator import validate_release_set_assets
+        manifest = ServiceManifest(services={
+            "svc-a": self._svc_with_runtime(
+                assets=[("/etc/ccu/someip/vsomeip.json",
+                         "/etc/ccu/someip/vsomeip.json", True,
+                         "vsomeip-json")],
+            ),
+        })
+        with pytest.raises(ValidationFailure):
+            validate_release_set_assets(manifest)
+
+    def test_vsomeip_json_target_scope(self):
+        from ccu_build.validator import validate_release_set_assets
+        manifest = ServiceManifest(services={
+            "svc-a": self._svc_with_runtime(
+                assets=[("opt/vsomeip.json", "/opt/vsomeip.json", True,
+                         "vsomeip-json")],
+            ),
+        })
+        with pytest.raises(ValidationFailure) as exc:
+            validate_release_set_assets(manifest)
+        assert any("/etc/ccu/" in e for e in exc.value.details)
+
+    def test_valid_declarations_pass(self):
+        from ccu_build.validator import validate_release_set_assets
+        manifest = ServiceManifest(services={
+            "svc-a": self._svc_with_runtime(
+                units=["svc-a.service"],
+                assets=[
+                    ("usr/lib/systemd/system/svc-a.service.d/vsomeip.conf",
+                     "/usr/lib/systemd/system/svc-a.service.d/vsomeip.conf",
+                     True, "vsomeip-dropin"),
+                    ("etc/ccu/someip/vsomeip.json",
+                     "/etc/ccu/someip/vsomeip.json", True, "vsomeip-json"),
+                ],
+            ),
+        })
+        validate_release_set_assets(manifest)  # no raise

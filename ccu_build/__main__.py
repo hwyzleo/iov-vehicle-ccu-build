@@ -166,6 +166,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         jobs=args.jobs,
         clean=args.clean,
         dry_run=args.dry_run,
+        allow_missing_platform_assets=args.allow_missing_platform_assets,
     )
     orch = BuildOrchestrator(project, config)
 
@@ -181,6 +182,12 @@ def cmd_build(args: argparse.Namespace) -> int:
     print(f"\n=== Build Report ===")
     print(f"Status: {report.status}")
     print(f"Duration: {report.duration_seconds:.1f}s")
+    if report.release_set:
+        print(f"Release set: {report.release_set} "
+              f"(aggregation: {report.aggregation_status})")
+        print(f"Expanded closure: {' -> '.join(report.expanded_services)}")
+        if report.systemd_units:
+            print(f"Aggregated units: {' '.join(report.systemd_units)}")
     for sr in report.service_results:
         print(f"  [{sr.id}] {sr.status} ({sr.duration_seconds:.1f}s)")
         for step, status in sr.steps.items():
@@ -259,7 +266,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     from .staging import StagingDir
 
     staging = StagingDir(project.root, args.platform, args.profile)
-    verifier = Verifier(staging)
+    verifier = Verifier(staging, project=project)
 
     if args.package:
         result = verifier.verify_package(Path(args.package))
@@ -313,6 +320,7 @@ def cmd_config(args: argparse.Namespace) -> int:
     project = _get_project(args)
     from .staging import StagingDir
     from .config import ConfigOverlay
+    from .assembly import ReleaseSetAssembler
     from .errors import CcuBuildError
 
     staging = StagingDir(project.root, args.platform, args.profile)
@@ -323,6 +331,12 @@ def cmd_config(args: argparse.Namespace) -> int:
 
     sm = project.load_service_manifest()
     deployment = project.load_config_deployment_manifest()
+    assembler = ReleaseSetAssembler(
+        project=project,
+        staging=staging,
+        service_manifest=sm,
+        deployment=deployment,
+    )
     overlay = ConfigOverlay(
         platform=args.platform,
         platform_rootfs=project.platform_configs_root(),
@@ -331,6 +345,7 @@ def cmd_config(args: argparse.Namespace) -> int:
         service_manifest=sm,
         project_root=project.root,
         state_dir=staging.manifests_dir,
+        claimed_paths=assembler.claimed_paths_from_report(),
     )
     report = overlay.apply()
     try:
@@ -397,6 +412,13 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--jobs", "-j", type=int, default=1, help="Parallel jobs")
     p_build.add_argument("--clean", action="store_true", help="Clean build")
     p_build.add_argument("--dry-run", action="store_true", help="Print commands without executing")
+    p_build.add_argument(
+        "--allow-missing-platform-assets",
+        action="store_true",
+        help="Development-only exemption: continue when a required platform "
+             "runtime asset (e.g. controlled vsomeip.json) is absent. Rejected "
+             "for release profiles (CCU-BUILD-DSN-CR-004 §11).",
+    )
     p_build.set_defaults(func=cmd_build)
 
     # package

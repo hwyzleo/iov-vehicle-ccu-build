@@ -75,9 +75,16 @@ class TestLoadConfigDeployment:
         assert "ccu-dev" in m
         plat = m.get("ccu-dev")
         assert plat is not None
-        assert len(plat.files) == 3
+        assert len(plat.files) == 5
         owners = {r.owner for r in plat.files}
         assert owners == {"build", "service", "provisioning"}
+        # CCU-BUILD-DSN-CR-004 §6: BUILD owns the platform vsomeip assets.
+        vsomeip = [r for r in plat.files if "vsomeip" in r.pattern or "someip" in r.pattern]
+        assert len(vsomeip) == 2
+        for rule in vsomeip:
+            assert rule.owner == "build"
+            assert rule.category == "release-managed"
+            assert rule.deploy_policy == "replace"
 
     def test_load_returns_empty_when_absent(self, tmp_path: Path):
         # Build a minimal project root without config-deployment.yaml

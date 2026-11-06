@@ -7,12 +7,14 @@ and staging verification (ELF check, artifact manifest, path conflicts).
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
 from .elfcheck import check_staging
 from .staging import StagingDir, sha256_file
+from .unitcheck import check_install_root_units, load_aggregation_target_units
 
 
 @dataclass
@@ -40,8 +42,9 @@ class VerifyResult:
 class Verifier:
     """Verifies packages and staging output."""
 
-    def __init__(self, staging: StagingDir):
+    def __init__(self, staging: StagingDir, project=None):
         self.staging = staging
+        self.project = project
 
     def verify_staging(self, expected_machine: int | None = None) -> VerifyResult:
         """Verify the staging directory: ELF check + artifact manifest."""
@@ -59,18 +62,25 @@ class Verifier:
             return result
         result.add_check("install-root-exists", True)
 
-        # 2. ELF / pollution check
+        # 2. ELF / pollution check (skipped for native HOST builds: the host
+        #    object format is not the TARGET format).
+        is_host = getattr(self.project, "platform", None) == "host"
         try:
-            if expected_machine is not None:
+            elf_results = []
+            if is_host:
+                result.add_check(
+                    "elf-pollution-check", True,
+                    "skipped for native HOST build (no TARGET object format)",
+                )
+            elif expected_machine is not None:
                 elf_results = check_staging(
                     self.staging.install_root,
                     expected_machine=expected_machine,
                     expected_class=_ELFCLASS64,
                 )
             else:
-                # Machine unknown (TBD/host): check for Mach-O only
+                # Machine unknown (TBD platform): check for Mach-O only
                 from .elfcheck import ElfCheckResult, classify_file
-                elf_results = []
                 for path in sorted(self.staging.install_root.rglob("*")):
                     if not path.is_file():
                         continue
@@ -81,14 +91,15 @@ class Verifier:
                             f"Mach-O binary detected: {path}"
                         )
                     elf_results.append(r)
-            violations = sum(len(r.violations) for r in elf_results)
-            warnings = sum(len(r.warnings) for r in elf_results)
-            result.add_check(
-                "elf-pollution-check",
-                violations == 0,
-                f"{len(elf_results)} files checked, "
-                f"{violations} violation(s), {warnings} warning(s)",
-            )
+            if not is_host:
+                violations = sum(len(r.violations) for r in elf_results)
+                warnings = sum(len(r.warnings) for r in elf_results)
+                result.add_check(
+                    "elf-pollution-check",
+                    violations == 0,
+                    f"{len(elf_results)} files checked, "
+                    f"{violations} violation(s), {warnings} warning(s)",
+                )
         except Exception as exc:
             result.add_check("elf-pollution-check", False, str(exc))
 
@@ -130,13 +141,172 @@ class Verifier:
                     conflicts == 0,
                     f"{conflicts} conflict(s)" if conflicts else "No conflicts",
                 )
+                self._check_release_set(manifest, result)
+                self._check_traceability(manifest, result)
+                self._check_stale(manifest, result)
             except Exception as exc:
                 result.add_check("path-conflicts", False, str(exc))
+
+        # 5. Equivalent systemd unit check (systemd-analyze when available).
+        unit_result = check_install_root_units(self.staging.install_root)
+        result.add_check(
+            "systemd-units",
+            unit_result.status == "pass",
+            f"{unit_result.engine}: {len(unit_result.checked)} file(s)"
+            + ("; " + "; ".join(unit_result.errors) if unit_result.errors else ""),
+        )
+
+        # 6. Platform runtime asset revalidation on the final install-root.
+        if self.project is not None and manifest_path.exists():
+            try:
+                self._check_platform_assets(manifest, result)
+            except Exception as exc:
+                result.add_check("platform-assets", False, str(exc))
 
         if result.status == "pending":
             result.status = "success"
 
         return result
+
+    def _check_release_set(self, manifest: dict[str, Any], result: VerifyResult) -> None:
+        """Verify release-set evidence against the install-root payload (§7.2)."""
+        release_set = manifest.get("release_set")
+        install_root = self.staging.install_root
+        target = install_root / "usr/lib/systemd/system/ccu.target"
+        unit_dir = install_root / "usr/lib/systemd/system"
+        payload_units = sorted(
+            p.name for p in unit_dir.glob("*.service")
+        ) if unit_dir.is_dir() else []
+        if not release_set:
+            result.add_check(
+                "release-set-evidence",
+                not target.is_file(),
+                "no release-set evidence (single-service/all build); "
+                + ("aggregation target present" if target.is_file() else "no target"),
+            )
+            return
+        units = list(release_set.get("systemd_units") or [])
+        if not units:
+            ok = release_set.get("aggregation_status") == "empty" and not target.is_file()
+            result.add_check(
+                "release-set-evidence", ok,
+                f"empty aggregation ({release_set.get('aggregation_status')})",
+            )
+            return
+        wants, after = load_aggregation_target_units(install_root)
+        missing = [u for u in units if u not in payload_units]
+        ok = (
+            target.is_file()
+            and wants == units
+            and after == units
+            and not missing
+        )
+        result.add_check(
+            "release-set-evidence",
+            ok,
+            f"release-set '{release_set.get('id')}': units={units} "
+            f"wants={wants} after={after} missing={missing}",
+        )
+
+    def _check_traceability(self, manifest: dict[str, Any], result: VerifyResult) -> None:
+        """Every artifact must have an owner; BUILD-owned files full evidence (§7.2)."""
+        unknown = [
+            a.get("path", "") for a in manifest.get("artifacts", []) or []
+            if str(a.get("owner_service", "")) in ("", "unknown")
+        ]
+        result.add_check(
+            "artifact-ownership",
+            not unknown,
+            "no unknown owner" if not unknown
+            else "unknown owner: " + ", ".join(sorted(unknown)),
+        )
+        incomplete: list[str] = []
+        for artifact in manifest.get("artifacts", []) or []:
+            if str(artifact.get("owner_service")) != "build":
+                continue
+            if artifact.get("config_provenance"):
+                # BUILD platform overlay output: provenance is recorded in
+                # config_provenance (default/platform source, SHA, policy).
+                continue
+            if not artifact.get("source") or not artifact.get("source_sha256"):
+                incomplete.append(str(artifact.get("path", "")))
+            elif not artifact.get("mode"):
+                incomplete.append(str(artifact.get("path", "")))
+        result.add_check(
+            "build-owned-evidence",
+            not incomplete,
+            "BUILD-owned files recorded with source/SHA/mode"
+            if not incomplete
+            else "incomplete BUILD-owned evidence: " + ", ".join(sorted(incomplete)),
+        )
+
+    def _check_stale(self, manifest: dict[str, Any], result: VerifyResult) -> None:
+        """No install-root file may be missing from the artifact manifest (§9.9)."""
+        recorded = {
+            str(a.get("path", "")) for a in manifest.get("artifacts", []) or []
+        }
+        stale: list[str] = []
+        for path in sorted(self.staging.install_root.rglob("*")):
+            if not path.is_file() and not path.is_symlink():
+                continue
+            rel = str(path.relative_to(self.staging.install_root)).replace(os.sep, "/")
+            if f"rootfs/{rel}" not in recorded:
+                stale.append(rel)
+        result.add_check(
+            "stale-assets",
+            not stale,
+            "install-root matches the artifact manifest" if not stale
+            else "unrecorded install-root file(s): " + ", ".join(stale),
+        )
+
+    def _check_platform_assets(self, manifest: dict[str, Any], result: VerifyResult) -> None:
+        """Revalidate delivered platform runtime assets on the install-root."""
+        from .assetcheck import application_from_dropin_target, run_asset_validation
+
+        service_manifest = self.project.load_service_manifest()
+        release_set = manifest.get("release_set") or {}
+        services = list(release_set.get("expanded_services") or [])
+        if not services:
+            services = list(service_manifest.services.keys())
+        declared = []
+        for service_id in services:
+            svc = service_manifest.get(service_id)
+            if svc is None:
+                continue
+            for asset in svc.runtime.platform_assets:
+                declared.append(asset)
+        installed = []
+        missing: list[str] = []
+        for asset in declared:
+            target = self.staging.install_root / asset.target.lstrip("/")
+            if target.is_file():
+                installed.append((asset, target))
+            elif asset.required:
+                missing.append(asset.target)
+        dropin_apps = sorted({
+            app for asset, _ in installed
+            if asset.validation == "vsomeip-dropin"
+            for app in [application_from_dropin_target(asset.target)] if app
+        })
+        failures: list[str] = []
+        for asset, target in installed:
+            app = application_from_dropin_target(asset.target) or ""
+            outcome = run_asset_validation(
+                asset.validation, target,
+                expected_application=app,
+                required_applications=dropin_apps if asset.validation == "vsomeip-json" else (),
+            )
+            if outcome.status == "fail":
+                failures.append(
+                    f"{asset.target}: " + "; ".join(outcome.errors)
+                )
+        result.add_check(
+            "platform-assets",
+            not failures and not missing,
+            f"{len(installed)} asset(s) revalidated"
+            + (f"; failures: {'; '.join(failures)}" if failures else "")
+            + (f"; missing required: {', '.join(missing)}" if missing else ""),
+        )
 
     def verify_package(self, package_path: Path) -> VerifyResult:
         """Verify a release package: checksum + structure."""
