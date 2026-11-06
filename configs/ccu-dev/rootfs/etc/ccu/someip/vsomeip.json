@@ -1,0 +1,45 @@
+{
+    "applications": [
+        {
+            "name": "tbox-someip",
+            "id": "0x6101"
+        },
+        {
+            "name": "ccu-fota",
+            "id": "0x1310"
+        },
+        {
+            "name": "ccu-diag",
+            "id": "0x1110"
+        },
+        {
+            "name": "ccu-sec",
+            "id": "0x1210"
+        }
+    ],
+    "routing": "tbox-someip",
+    "service-discovery": {
+        "enable": "true",
+        "multicast": "239.0.0.1",
+        "port": "30490",
+        "protocol": "udp",
+        "initial_delay_min": "10",
+        "initial_delay_max": "100",
+        "repetitions_base_delay": "200",
+        "repetitions_max": "3",
+        "cyclic_offer_delay": "1000",
+        "request_response_delay": "1500"
+    },
+    "payload": {
+        "max-serialized-size": "65535"
+    },
+    "threads": {
+        "request": "2",
+        "io": "2"
+    },
+    "network": {
+        "primary": {
+            "name": "eth0"
+        }
+    }
+}

@@ -180,9 +180,12 @@ class TestRealReleaseSetPlans:
         assert plan.ordered_units == [
             "ccu-sec.service", "ccu-diag.service", "ccu-fota.service"
         ]
-        # Release profile without the controlled vsomeip.json must fail closed
-        # (CCU-BUILD-DSN-CR-004 §11 / REQ-003).
-        assert any("vsomeip.json" in e for e in plan.errors)
+        # 受控基线已落库（configs/ccu-dev/rootfs/etc/ccu/someip/vsomeip.json）：
+        # release profile 不再 fail-closed，共享 JSON 进入计划且三服务去重一次。
+        # （缺基线时的 fail-closed 语义由 tests/unit/test_assembly.py 的
+        #   合成工程用例覆盖，CCU-BUILD-DSN-CR-004 §11。）
+        assert plan.errors == []
+        assert "/etc/ccu/someip/vsomeip.json" in {a.target for a in plan.assets}
 
     def test_dev_exemption_allows_plan_without_device_json(self):
         project = Project(PROJECT_ROOT, platform="ccu-dev")
@@ -198,7 +201,9 @@ class TestRealReleaseSetPlans:
         )
         assert plan.errors == []
         installed = sorted(a.target for a in plan.assets)
+        # 三个服务共同声明同一份共享 JSON -> 只安装一次（§5.3 去重）。
         assert installed == [
+            "/etc/ccu/someip/vsomeip.json",
             "/usr/lib/systemd/system/ccu-diag.service.d/vsomeip.conf",
             "/usr/lib/systemd/system/ccu-fota.service.d/vsomeip.conf",
             "/usr/lib/systemd/system/ccu-sec.service.d/vsomeip.conf",
@@ -627,12 +632,13 @@ class TestRealServiceSetStaging:
             assert "Requires=" not in target
             installed = {a.target for a in assembly.assets}
             assert installed == {
+                "/etc/ccu/someip/vsomeip.json",
                 f"/{UNIT_DIR}/ccu-sec.service.d/vsomeip.conf",
                 f"/{UNIT_DIR}/ccu-diag.service.d/vsomeip.conf",
                 f"/{UNIT_DIR}/ccu-fota.service.d/vsomeip.conf",
             }
-            # Controlled device JSON not landed -> recorded, not invented.
-            assert any("vsomeip.json" in m["source"] for m in assembly.missing)
+            # 基线已落库 -> 不再记录 missing。
+            assert assembly.missing == []
 
             service_results = [
                 ServiceResult(
@@ -687,8 +693,10 @@ class TestRealServiceSetStaging:
             assert checks["release-set-evidence"]["status"] == "success"
             assert checks["artifact-ownership"]["status"] == "success"
             assert checks["build-owned-evidence"]["status"] == "success"
-            assert checks["platform-assets"]["status"] == "failed"
-            assert "vsomeip.json" in checks["platform-assets"]["message"]
+            # 受控基线已落库：平台资产校验通过（缺基线的失败路径由
+            # tests/unit/test_assembly.py 的合成工程用例覆盖）。
+            assert checks["platform-assets"]["status"] == "success"
+            assert "revalidated" in checks["platform-assets"]["message"]
 
             # Package + deploy dry-run: release-set topology pre-check passes.
             package = Packager(staging).create_package(
