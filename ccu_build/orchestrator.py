@@ -308,7 +308,20 @@ class BuildOrchestrator:
         env["CCU_DEP_STAGING"] = str(self.staging.dep_staging)
         if self.config.is_target:
             env["CCU_SYSROOT"] = str(self.project.sysroot_path)
-            env["PKG_CONFIG_SYSROOT_DIR"] = str(self.staging.dep_staging)
+            # TARGET pkg-config isolation (设计 §4)：只从受控 sysroot 解析 .pc，
+            # 并用 PKG_CONFIG_SYSROOT_DIR 把其中的 /usr 路径前缀化，宿主 /usr
+            # 不得泄漏到目标的 include/link 参数。yaml-cpp 这类 CMake package
+            # 依赖仍由 find_package(CONFIG) 经 CCU_DEP_STAGING 解析。
+            sysroot = self.project.sysroot_path
+            env["PKG_CONFIG_SYSROOT_DIR"] = str(sysroot)
+            pkg_dirs = [
+                sysroot / "usr/lib/pkgconfig",
+                sysroot / "usr/share/pkgconfig",
+                *sorted((sysroot / "usr/lib").glob("*/pkgconfig")),
+            ]
+            env["PKG_CONFIG_LIBDIR"] = ":".join(
+                str(p) for p in pkg_dirs if p.is_dir()
+            )
             # Platform manifest architecture for toolchain CMAKE_SYSTEM_PROCESSOR
             try:
                 pm = self.project.load_platform_manifest()

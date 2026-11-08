@@ -63,6 +63,21 @@ def seeded_install_root(project, tmp_path: Path):
     return install_root, state_dir, owners
 
 
+def _expected_overlaid_paths() -> set[str]:
+    """Platform whole-file overlays currently shipped for ccu-dev.
+
+    Kept explicit so a new platform config file must be a deliberate test
+    update (common + minimal/framework-consumer + real service configs).
+    """
+    return {
+        "/etc/ccu/common.yaml",
+        "/etc/ccu/conf.d/ccu-hello-cli.yaml",
+        "/etc/ccu/conf.d/framework-consumer.yaml",
+        "/etc/ccu/conf.d/diag.yaml",
+        "/etc/ccu/conf.d/sec.yaml",
+    }
+
+
 def _make_overlay(project, install_root, state_dir) -> ConfigOverlay:
     return ConfigOverlay(
         platform="ccu-dev",
@@ -87,8 +102,8 @@ class TestOverlayPipeline:
         install_root, state_dir, owners = seeded_install_root
         overlay = _make_overlay(project, install_root, state_dir)
         report = overlay.apply(owners)
-        # 3 files: common + 2 service configs
-        assert len(report.overlaid) == 3
+        # common + service configs (see _expected_overlaid_paths)
+        assert {r.logical_path for r in report.overlaid} == _expected_overlaid_paths()
         # Service configs replaced with platform values
         hello = (install_root / "etc/ccu/conf.d/ccu-hello-cli.yaml").read_text()
         assert "ccu-dev" in hello
@@ -138,7 +153,7 @@ class TestOverlayPipeline:
         # serialized
         d = am.to_dict()
         cfg_entries = [a for a in d["artifacts"] if a.get("config_provenance")]
-        assert len(cfg_entries) == 3
+        assert len(cfg_entries) == len(_expected_overlaid_paths())
 
     def test_overlay_report_saved(self, project, seeded_install_root):
         install_root, state_dir, owners = seeded_install_root
@@ -148,7 +163,7 @@ class TestOverlayPipeline:
         report.save(out)
         data = json.loads(out.read_text())
         assert data["platform"] == "ccu-dev"
-        assert len(data["overlaid"]) == 3
+        assert {e["logical_path"] for e in data["overlaid"]} == _expected_overlaid_paths()
 
 
 # ---------------------------------------------------------------------------

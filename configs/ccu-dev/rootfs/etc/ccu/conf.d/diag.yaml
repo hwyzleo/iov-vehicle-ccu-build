@@ -62,8 +62,10 @@ diag:
       port: 13400
 
   # 原 did_registry.yaml 的 registryVersion / baselineDids / ecus。
+  # registryVersion 随读取规则变化递增（CCU-DIAG-DSN-CR-012 D2：字段名统一
+  # 为 softwarePartNumber，对应 DID 0xF188）。
   registry:
-    registryVersion: "2026.11.1"
+    registryVersion: "2026.11.2"
     baselineDids: [0xF195, 0xF188, 0xF187, 0xF193]
     ecus:
       - ecuId: "BMS"
@@ -105,7 +107,7 @@ diag:
             encoding: "ASCII"
             length: 16
           - did: 0xF188
-            field: "ecuSoftwareNumber"
+            field: "softwarePartNumber"
             encoding: "ASCII"
             length: 11
           - did: 0xF193
@@ -133,6 +135,10 @@ diag:
             field: "swVersion"
             encoding: "ASCII"
             length: 16
+          - did: 0xF188
+            field: "softwarePartNumber"
+            encoding: "ASCII"
+            length: 11
           - did: 0xF18C
             field: "serialNumber"
             encoding: "ASCII"
@@ -147,6 +153,10 @@ diag:
             field: "swVersion"
             encoding: "ASCII"
             length: 16
+          - did: 0xF188
+            field: "softwarePartNumber"
+            encoding: "ASCII"
+            length: 11
           - did: 0xF18C
             field: "serialNumber"
             encoding: "ASCII"
@@ -161,6 +171,10 @@ diag:
             field: "swVersion"
             encoding: "ASCII"
             length: 16
+          - did: 0xF188
+            field: "softwarePartNumber"
+            encoding: "ASCII"
+            length: 11
           - did: 0xF18C
             field: "serialNumber"
             encoding: "ASCII"
@@ -175,6 +189,10 @@ diag:
             field: "swVersion"
             encoding: "ASCII"
             length: 16
+          - did: 0xF188
+            field: "softwarePartNumber"
+            encoding: "ASCII"
+            length: 11
           - did: 0xF18C
             field: "serialNumber"
             encoding: "ASCII"

@@ -183,6 +183,8 @@ services:
 
   # CCU-DIAG 真实服务接入（CCU-DIAG-DSN-CR-009 §3.2/§6.1，seed 见 CR-010 §12.1）。
   # 固定 commit；DIAG 依赖 Framework SDK 并表达 DIAG→SEC 运行拓扑。
+  # revision 追到 CR-012：ecu_inventory 事实拆出 softwarePartNumber（DID 0xF188）
+  # 独立字段并新增 serialNumber（DID 0xF18C）读回（66d2e5b / 880ad37）。
   # ccu-diag-runtime 精确安装 5 个文件：usr/bin/ccu_diag、
   # usr/lib/systemd/system/ccu-diag.service、etc/ccu/conf.d/diag.yaml、
   # usr/share/ccu-diag/schema/diag.schema.yaml、
@@ -194,7 +196,7 @@ services:
   ccu-diag:
     description: "CCU diagnostic gateway daemon (CCU-DIAG-DSN-CR-009/CR-010)"
     source_dir: ../iov-vehicle-ccu-diag
-    revision: 6ef5f2da6873e8dccd29946866d2ac5e87d1bdf0
+    revision: 66d2e5b7b7a32dcbeb67419ee0264a3ba404b72e
     kind: daemon
     build:
       targets:
@@ -243,10 +245,12 @@ services:
   # 平台相关的 vsomeip drop-in/共享 JSON 属于 BUILD 拥有的平台资产
   # （CCU-BUILD-DSN-CR-004 §5），不在服务 install 内。
   # FOTA 表达 FOTA→DIAG 运行拓扑（After=/Wants=，不使用 Requires=）。
+  # revision 追到 CR-012/CR-013：清单身份决策器（FULL/DIGEST）与安装结果登记
+  # （record_installed_versions）合入（945d4c2 / be7191e）。
   ccu-fota:
     description: "CCU FOTA daemon + orchestrator (CCU-FOTA-DSN-CR-008 §12)"
     source_dir: ../iov-vehicle-ccu-fota
-    revision: d0d0f7ba7c1484a2a080553f9e92e9b7cb5d4e3a
+    revision: be7191e421ad00d47e07b8c1a33545b75f490d12
     kind: daemon
     build:
       targets:
