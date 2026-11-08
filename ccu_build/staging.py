@@ -17,9 +17,56 @@ Provides file ownership tracking and path-conflict detection.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
+
+# Payload paths that MUST never enter a release staging tree or package
+# (CCU-BUILD-REQ-CR-005 / RELEASE-REQ-001): development fixtures, persistent
+# instance state (VIN / ECU inventory) and any /var/lib/ccu/** content.
+FORBIDDEN_PAYLOAD_NAMES = frozenset({"vin.dat", "ecu_inventory.json"})
+
+
+def find_forbidden_payload(root: Path) -> list[str]:
+    """Return install-root-relative paths that must not be released.
+
+    Rules (CR-005 §2):
+      * any ``config/dev/**`` segment sequence (development fixtures);
+      * any ``var/lib/ccu/**`` path (persistent / instance state);
+      * instance-state file names (``vin.dat``, ``ecu_inventory.json``)
+        wherever they appear.
+    """
+    hits: list[str] = []
+    if not root.exists():
+        return hits
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() and not path.is_symlink():
+            continue
+        rel = str(path.relative_to(root)).replace(os.sep, "/")
+        parts = rel.split("/")
+        dev_fixture = any(
+            parts[i] == "config" and parts[i + 1] == "dev"
+            for i in range(len(parts) - 1)
+        )
+        if (
+            dev_fixture
+            or "/var/lib/ccu/" in f"/{rel}"
+            or path.name in FORBIDDEN_PAYLOAD_NAMES
+        ):
+            hits.append(rel)
+    return hits
+
+
+def format_mode(path: Path, *, follow_symlinks: bool = False) -> str:
+    """Return a file mode as ``0o<perms>`` (e.g. ``0o644``).
+
+    Symlinks are inspected with ``lstat`` by default: the recorded mode is the
+    link's own permission bits, never the target's (设计 §9/§9.6).
+    """
+    st = path.stat() if follow_symlinks else path.lstat()
+    return oct(stat.S_IMODE(st.st_mode))
 
 
 @dataclass
@@ -31,6 +78,10 @@ class StagedFile:
     size: int
     sha256: str
     owner_service: str | None = None
+    # Final permission bits recorded in the Artifact Manifest (设计 §9,
+    # CCU-BUILD-DSN-CR-005 §3). Empty only for legacy callers that never
+    # resolved a file on disk.
+    mode: str = ""
 
 
 def sha256_file(path: Path) -> str:
@@ -128,15 +179,17 @@ class StagingDir:
                 rel_key = staging_prefix + rel
                 if path.is_symlink():
                     files.append(StagedFile(
-                        rel_path=rel_key, full_path=path, size=0, sha256=""
+                        rel_path=rel_key, full_path=path, size=0, sha256="",
+                        mode=format_mode(path),
                     ))
                 else:
-                    stat = path.stat()
+                    stat_result = path.stat()
                     files.append(StagedFile(
                         rel_path=rel_key,
                         full_path=path,
-                        size=stat.st_size,
+                        size=stat_result.st_size,
                         sha256=sha256_file(path),
+                        mode=format_mode(path, follow_symlinks=True),
                     ))
         return files
 

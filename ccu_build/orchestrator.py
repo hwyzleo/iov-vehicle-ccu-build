@@ -986,11 +986,16 @@ class BuildOrchestrator:
 
         # Build a map of logical rel path -> (service_id, target, version, component, staging)
         file_owners: dict[str, tuple[str, str, str, str, str]] = {}
+        # Provenance for service-installed files (CCU-BUILD-DSN-CR-005 §3):
+        # ``<service>@<fixed-revision>:<installed logical path>``. Empty when a
+        # service declares no fixed revision.
+        service_sources: dict[str, str] = {}
         for result in service_results:
             svc = service_manifest.get(result.id)
             if svc is None:
                 continue
             target_str = ",".join(svc.build.targets)
+            revision = getattr(svc, "revision", None)
             comp_by_file: dict[str, ComponentInstallResult] = {}
             for comp in result.components:
                 for f in comp.installed_files:
@@ -1006,6 +1011,8 @@ class BuildOrchestrator:
                 file_owners[rel_key] = (
                     result.id, target_str, "0.1.0", comp_name, comp_staging,
                 )
+                if revision:
+                    service_sources[rel_key] = f"{result.id}@{revision}:{path}"
 
         previous_entries = self._previous_artifact_entries()
         overlay_owned: dict[str, Any] = {}
@@ -1056,9 +1063,11 @@ class BuildOrchestrator:
                 git_commit=git_commit,
                 install_component=component,
                 staging=staging,
-                source=build_prov["source"] if build_prov else "",
+                source=build_prov["source"] if build_prov else service_sources.get(
+                    staged.rel_path, ""
+                ),
                 source_sha256=build_prov["source_sha256"] if build_prov else "",
-                mode=build_prov["mode"] if build_prov else "",
+                mode=build_prov["mode"] if build_prov else staged.mode,
                 referenced_by=(
                     [r for r in build_prov.get("referenced_by", "").split(",") if r]
                     if build_prov else []

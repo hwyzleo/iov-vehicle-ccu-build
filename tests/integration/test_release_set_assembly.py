@@ -43,8 +43,9 @@ from ccu_build.orchestrator import (
     ComponentInstallResult,
     ServiceResult,
 )
+from ccu_build.errors import PackageError
 from ccu_build.packaging import Packager
-from ccu_build.staging import StagingDir, sha256_file
+from ccu_build.staging import StagingDir, format_mode, sha256_file
 from ccu_build.verify import Verifier
 from tests.assembly_project import (
     make_assembler,
@@ -336,6 +337,77 @@ class TestFullPipeline:
         assert "/etc/ccu/common.yaml" in replaced
 
 
+class TestManifestInstallRootParity:
+    """CCU-BUILD-DSN-CR-005 §2: bidirectional manifest <-> install-root check.
+
+    Every recorded artifact must exist with the recorded SHA-256/mode; dev
+    fixtures and instance state must never be released.
+    """
+
+    def _run(self, tmp_path: Path):
+        project = make_project(tmp_path)
+        staging = make_staging(project)
+        run_pipeline(project, staging, "set-full", ["lib-a", "svc-a", "svc-b"])
+        return project, staging
+
+    def _check(self, project, staging, name: str) -> dict:
+        result = Verifier(staging, project=project).verify_staging()
+        return {c["name"]: c for c in result.checks}[name]
+
+    def test_mode_and_sha256_recorded_and_matching(self, tmp_path: Path):
+        project, staging = self._run(tmp_path)
+        data = json.loads(
+            (staging.manifests_dir / "artifact-manifest.json").read_text()
+        )
+        for artifact in data["artifacts"]:
+            if not artifact["path"].startswith("rootfs/"):
+                continue
+            target = staging.install_root / artifact["path"][len("rootfs/"):]
+            assert artifact["mode"] == format_mode(target, follow_symlinks=True)
+            assert artifact["sha256"] == sha256_file(target)
+        check = self._check(project, staging, "manifest-install-root-parity")
+        assert check["status"] == "success", check["message"]
+        assert self._check(project, staging, "forbidden-payload")["status"] == "success"
+
+    def test_missing_artifact_fails(self, tmp_path: Path):
+        project, staging = self._run(tmp_path)
+        (staging.install_root / "usr/bin/svc-b").unlink()
+        check = self._check(project, staging, "manifest-install-root-parity")
+        assert check["status"] == "failed"
+        assert "missing from install-root" in check["message"]
+        assert "rootfs/usr/bin/svc-b" in check["message"]
+
+    def test_sha256_mismatch_fails(self, tmp_path: Path):
+        project, staging = self._run(tmp_path)
+        (staging.install_root / "usr/bin/svc-b").write_text("tampered")
+        check = self._check(project, staging, "manifest-install-root-parity")
+        assert check["status"] == "failed"
+        assert "sha256 mismatch" in check["message"]
+
+    def test_mode_mismatch_fails(self, tmp_path: Path):
+        project, staging = self._run(tmp_path)
+        (staging.install_root / "usr/bin/svc-b").chmod(0o600)
+        check = self._check(project, staging, "manifest-install-root-parity")
+        assert check["status"] == "failed"
+        assert "mode" in check["message"]
+
+    def test_instance_state_and_dev_fixture_refused(self, tmp_path: Path):
+        project, staging = self._run(tmp_path)
+        vin = staging.install_root / "var/lib/ccu/diag/vin.dat"
+        vin.parent.mkdir(parents=True)
+        vin.write_text("VIN")
+        fixture = staging.install_root / "usr/bin/config/dev/diag.yaml"
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text("dev: true\n")
+
+        check = self._check(project, staging, "forbidden-payload")
+        assert check["status"] == "failed"
+        assert "var/lib/ccu/diag/vin.dat" in check["message"]
+        assert "config/dev/diag.yaml" in check["message"]
+        with pytest.raises(PackageError, match="forbidden payload"):
+            make_package(staging)
+
+
 class TestDeterminismAndSwitching:
     def test_repeated_and_clean_builds_identical(self, tmp_path: Path):
         project = make_project(tmp_path)
@@ -343,6 +415,10 @@ class TestDeterminismAndSwitching:
         run_pipeline(project, staging, "set-full", ["lib-a", "svc-a", "svc-b"])
         first = {
             str(p.relative_to(staging.install_root)): sha256_file(p)
+            for p in sorted(staging.install_root.rglob("*")) if p.is_file()
+        }
+        first_modes = {
+            str(p.relative_to(staging.install_root)): format_mode(p, follow_symlinks=True)
             for p in sorted(staging.install_root.rglob("*")) if p.is_file()
         }
         mode_first = (staging.install_root / TARGET_REL_PATH).stat().st_mode & 0o777
@@ -353,7 +429,12 @@ class TestDeterminismAndSwitching:
             str(p.relative_to(staging.install_root)): sha256_file(p)
             for p in sorted(staging.install_root.rglob("*")) if p.is_file()
         }
+        second_modes = {
+            str(p.relative_to(staging.install_root)): format_mode(p, follow_symlinks=True)
+            for p in sorted(staging.install_root.rglob("*")) if p.is_file()
+        }
         assert first == second
+        assert first_modes == second_modes
 
         # Clean rebuild into a fresh staging directory.
         clean_staging = make_staging(project, profile="clean")
@@ -362,7 +443,12 @@ class TestDeterminismAndSwitching:
             str(p.relative_to(clean_staging.install_root)): sha256_file(p)
             for p in sorted(clean_staging.install_root.rglob("*")) if p.is_file()
         }
+        third_modes = {
+            str(p.relative_to(clean_staging.install_root)): format_mode(p, follow_symlinks=True)
+            for p in sorted(clean_staging.install_root.rglob("*")) if p.is_file()
+        }
         assert first == third
+        assert first_modes == third_modes
         assert mode_first == 0o644
 
     def test_switch_to_smaller_set_cleans_stale_build_assets(self, tmp_path: Path):
@@ -571,6 +657,8 @@ REAL_SERVICE_FILES = {
         f"{UNIT_DIR}/ccu-diag.service",
         "etc/ccu/conf.d/diag.yaml",
         "usr/share/ccu-diag/schema/diag.schema.yaml",
+        # CCU-BUILD-DSN-CR-005 §1: deployment seed is part of the exact set.
+        "usr/share/ccu-diag/ecu-inventory.seed.json",
     ],
     "ccu-fota": [
         "usr/bin/ccu-fota",
@@ -610,6 +698,7 @@ class TestRealServiceSetStaging:
                         )
                     else:
                         path.write_text(f"{service_id}: fixture\n")
+                    path.chmod(0o644)
 
             service_manifest = project.load_service_manifest()
             assembler = ReleaseSetAssembler(
@@ -686,6 +775,28 @@ class TestRealServiceSetStaging:
             assert [a["path"] for a in data["artifacts"]
                     if a["owner_service"] == "unknown"] == []
 
+            # CCU-BUILD-DSN-CR-005 §3: seed ownership, provenance and SHA-256.
+            diag = service_manifest.get("ccu-diag")
+            seed_rel = "usr/share/ccu-diag/ecu-inventory.seed.json"
+            seed = next(
+                a for a in data["artifacts"] if a["path"] == f"rootfs/{seed_rel}"
+            )
+            assert seed["owner_service"] == "ccu-diag"
+            assert seed["owner_target"] == "ccu_diag"
+            assert seed["install_component"] == "ccu-diag-runtime"
+            assert seed["staging"] == "rootfs"
+            assert seed["mode"] == "0o644"
+            assert seed["source"] == f"ccu-diag@{diag.revision}:{seed_rel}"
+            assert seed["sha256"] == sha256_file(staging.install_root / seed_rel)
+            # Five-file exact set: daemon, unit, config, schema, seed.
+            diag_files = {
+                a["path"] for a in data["artifacts"]
+                if a["owner_service"] == "ccu-diag"
+            }
+            assert diag_files == {
+                f"rootfs/{rel}" for rel in REAL_SERVICE_FILES["ccu-diag"]
+            }
+
             # Unit check passes; platform assets keep reporting the open gate.
             verify = Verifier(staging, project=project).verify_staging()
             checks = {c["name"]: c for c in verify.checks}
@@ -693,6 +804,10 @@ class TestRealServiceSetStaging:
             assert checks["release-set-evidence"]["status"] == "success"
             assert checks["artifact-ownership"]["status"] == "success"
             assert checks["build-owned-evidence"]["status"] == "success"
+            assert checks["manifest-install-root-parity"]["status"] == "success", (
+                checks["manifest-install-root-parity"]["message"]
+            )
+            assert checks["forbidden-payload"]["status"] == "success"
             # 受控基线已落库：平台资产校验通过（缺基线的失败路径由
             # tests/unit/test_assembly.py 的合成工程用例覆盖）。
             assert checks["platform-assets"]["status"] == "success"
@@ -713,5 +828,14 @@ class TestRealServiceSetStaging:
             )
             replaced = {e["path"] for e in report.deploy_plan["replace"]}
             assert f"/{UNIT_DIR}/ccu-fota.service.d/vsomeip.conf" in replaced
+            # Seed is release-managed: replaced with the rest of the set.
+            assert f"/{seed_rel}" in replaced
+            # Instance state is never part of the payload or the plan.
+            planned = {
+                e["path"]
+                for key in ("create", "replace", "preserve", "unauthorized")
+                for e in report.deploy_plan[key]
+            }
+            assert not any(p.startswith("/var/lib/ccu/") for p in planned)
         finally:
             shutil.rmtree(staging.root, ignore_errors=True)

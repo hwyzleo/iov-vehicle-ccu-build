@@ -238,6 +238,35 @@ class TestDeployPlan:
         assert plan["summary"]["replace"] == 2  # common + conf.d
         assert plan["summary"]["preserve"] == 1  # credentials
 
+    def test_diag_seed_replaced_and_instance_state_excluded(
+        self, project, tmp_path: Path
+    ):
+        """CCU-BUILD-DSN-CR-005 §4: seed replaces, instance state never ships."""
+        payload = tmp_path / "install-root"
+        seed = payload / "usr/share/ccu-diag/ecu-inventory.seed.json"
+        seed.parent.mkdir(parents=True)
+        seed.write_text('{"schemaVersion": 1}\n')
+        vin = payload / "var/lib/ccu/diag/vin.dat"
+        vin.parent.mkdir(parents=True)
+        vin.write_text("VIN")
+
+        d = Deployer(project, platform="ccu-dev")
+        plan = d.build_deploy_plan(payload)
+
+        replaced = {e["path"]: e for e in plan["replace"]}
+        assert "/usr/share/ccu-diag/ecu-inventory.seed.json" in replaced
+        entry = replaced["/usr/share/ccu-diag/ecu-inventory.seed.json"]
+        assert entry["owner"] == "service"
+        assert entry["category"] == "release-managed"
+        assert entry["deploy_policy"] == "replace"
+
+        planned = {
+            e["path"]
+            for key in ("create", "replace", "preserve", "unauthorized")
+            for e in plan[key]
+        }
+        assert "/var/lib/ccu/diag/vin.dat" not in planned
+
     def test_provisioning_excluded(self, project, tmp_path: Path):
         payload = self._make_payload(tmp_path)
         d = Deployer(project, platform="ccu-dev")

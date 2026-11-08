@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .elfcheck import check_staging
-from .staging import StagingDir, sha256_file
+from .staging import StagingDir, find_forbidden_payload, format_mode, sha256_file
 from .unitcheck import check_install_root_units, load_aggregation_target_units
 
 
@@ -144,6 +144,7 @@ class Verifier:
                 self._check_release_set(manifest, result)
                 self._check_traceability(manifest, result)
                 self._check_stale(manifest, result)
+                self._check_manifest_parity(manifest, result)
             except Exception as exc:
                 result.add_check("path-conflicts", False, str(exc))
 
@@ -154,6 +155,17 @@ class Verifier:
             unit_result.status == "pass",
             f"{unit_result.engine}: {len(unit_result.checked)} file(s)"
             + ("; " + "; ".join(unit_result.errors) if unit_result.errors else ""),
+        )
+
+        # 5b. Development fixtures / instance state must never be released
+        #     (CCU-BUILD-REQ-CR-005, RELEASE-REQ-001).
+        forbidden = find_forbidden_payload(self.staging.install_root)
+        result.add_check(
+            "forbidden-payload",
+            not forbidden,
+            "no dev fixtures or instance state in the payload"
+            if not forbidden
+            else "forbidden payload file(s): " + ", ".join(forbidden),
         )
 
         # 6. Platform runtime asset revalidation on the final install-root.
@@ -257,6 +269,68 @@ class Verifier:
             not stale,
             "install-root matches the artifact manifest" if not stale
             else "unrecorded install-root file(s): " + ", ".join(stale),
+        )
+
+    def _check_manifest_parity(
+        self, manifest: dict[str, Any], result: VerifyResult
+    ) -> None:
+        """Bidirectional manifest <-> install-root check (CR-005 §2/§3).
+
+        ``_check_stale`` guarantees install-root -> manifest coverage; this
+        check guarantees the reverse: every recorded artifact MUST still exist
+        with the recorded SHA-256 and mode. Missing files, missing mode
+        evidence and content/permission drift all fail the release.
+        """
+        roots = {
+            "rootfs": self.staging.install_root,
+            "sdk": self.staging.sdk_root,
+        }
+        missing: list[str] = []
+        mismatched: list[str] = []
+        unchecked: list[str] = []
+        checked = 0
+        for artifact in manifest.get("artifacts", []) or []:
+            path = str(artifact.get("path", ""))
+            prefix, _, rel = path.partition("/")
+            root = roots.get(prefix)
+            if root is None or not rel:
+                unchecked.append(path)
+                continue
+            target = root / rel
+            if not (target.is_file() or target.is_symlink()):
+                missing.append(path)
+                continue
+            checked += 1
+            if target.is_symlink():
+                # Manifest records the link's own mode; the target may live
+                # outside staging, so SHA-256 is not applicable.
+                continue
+            recorded_mode = str(artifact.get("mode") or "")
+            actual_mode = format_mode(target, follow_symlinks=True)
+            if not recorded_mode:
+                mismatched.append(f"{path}: unrecorded mode (actual {actual_mode})")
+                continue
+            if recorded_mode != actual_mode:
+                mismatched.append(
+                    f"{path}: mode {recorded_mode} != {actual_mode}"
+                )
+                continue
+            recorded_sha = str(artifact.get("sha256") or "")
+            if recorded_sha != sha256_file(target):
+                mismatched.append(f"{path}: sha256 mismatch")
+        problems: list[str] = []
+        if missing:
+            problems.append("missing from install-root: " + ", ".join(sorted(missing)))
+        if unchecked:
+            problems.append("not rootfs/sdk-relative: " + ", ".join(sorted(unchecked)))
+        if mismatched:
+            problems.append("mismatch: " + "; ".join(sorted(mismatched)))
+        result.add_check(
+            "manifest-install-root-parity",
+            not problems,
+            f"{checked} artifact(s) match the install-root (path/SHA-256/mode)"
+            if not problems
+            else "; ".join(problems),
         )
 
     def _check_platform_assets(self, manifest: dict[str, Any], result: VerifyResult) -> None:

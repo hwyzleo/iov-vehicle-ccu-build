@@ -127,7 +127,7 @@ class ArtifactManifest:
             elf_info=elf_info,
             source=source,
             source_sha256=source_sha256,
-            mode=mode,
+            mode=mode or staged.mode,
             referenced_by=list(referenced_by or []),
         )
         self.add_entry(entry)

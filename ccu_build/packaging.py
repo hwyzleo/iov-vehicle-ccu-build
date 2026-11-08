@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import PackageError
-from .staging import StagingDir, sha256_file
+from .staging import StagingDir, find_forbidden_payload, sha256_file
 
 
 @dataclass
@@ -59,6 +59,15 @@ class Packager:
         if not self.staging.install_root.exists():
             raise PackageError(
                 f"Staging install-root does not exist: {self.staging.install_root}"
+            )
+
+        # Development fixtures and device instance state never enter a release
+        # package (CCU-BUILD-REQ-CR-005, RELEASE-REQ-001).
+        forbidden = find_forbidden_payload(self.staging.install_root)
+        if forbidden:
+            raise PackageError(
+                "Refusing to package forbidden payload file(s): "
+                + ", ".join(forbidden)
             )
 
         if artifact_manifest_path is None:

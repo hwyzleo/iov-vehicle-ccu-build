@@ -75,7 +75,7 @@ class TestLoadConfigDeployment:
         assert "ccu-dev" in m
         plat = m.get("ccu-dev")
         assert plat is not None
-        assert len(plat.files) == 5
+        assert len(plat.files) == 6
         owners = {r.owner for r in plat.files}
         assert owners == {"build", "service", "provisioning"}
         # CCU-BUILD-DSN-CR-004 §6: BUILD owns the platform vsomeip assets.
@@ -85,6 +85,23 @@ class TestLoadConfigDeployment:
             assert rule.owner == "build"
             assert rule.category == "release-managed"
             assert rule.deploy_policy == "replace"
+
+    def test_diag_seed_rule(self, project_root: Path):
+        """CCU-BUILD-DSN-CR-005 §4: seed is service-owned, replaced."""
+        from ccu_build.manifest import Project
+        p = Project(project_root)
+        plat = p.load_config_deployment_manifest().get("ccu-dev")
+        assert plat is not None
+        seed = [
+            r for r in plat.files
+            if r.pattern == "/usr/share/ccu-diag/ecu-inventory.seed.json"
+        ]
+        assert len(seed) == 1
+        rule = seed[0]
+        assert rule.owner == "service"
+        assert rule.category == "release-managed"
+        assert rule.deploy_policy == "replace"
+        assert rule.is_exact is True
 
     def test_load_returns_empty_when_absent(self, tmp_path: Path):
         # Build a minimal project root without config-deployment.yaml

@@ -319,3 +319,71 @@ SRC → ORCH → FW → SVC → STAGE → PKG → DEV → TEST
 | `tests/unit/test_manifest.py` | 真实服务固定 revision 与拓扑、`platform_assets` 解析、release-set 成员 |
 | `tests/integration/test_release_set_assembly.py` | 三集合 target 计划、release profile fail-closed、开发豁免；全流水线（assembler→overlay→artifact→package→deploy dry-run）；确定性/clean-incremental 一致；切换集合清理；打包拒绝；部署预检（target/payload/metadata 错配）；真实 HOST minimal build |
 | `tests/integration/test_pipeline.py`、`test_framework_build.py` | 既有全量校验与 framework HOST 构建回归 |
+
+## CCU-BUILD-DSN-CR-005：DIAG 部署 seed 安装集
+
+变更映射：`ccu-diag-runtime` 四文件集合 → 五文件集合（新增
+`usr/share/ccu-diag/ecu-inventory.seed.json`）；固定 revision `2984eed` →
+DIAG CR-010 合入 commit `6ef5f2d`。seed 是服务拥有的只读 release-managed 资产，
+BUILD 只负责登记、staging、追溯、部署与回退，不内联设备值。
+
+### 设计 §9.10 服务登记与安装集
+
+- `manifests/services.yaml` → `ccu-diag.revision` 固定 commit；登记注释写明五文件
+  精确集合、seed 的 0644 mode、唯一安装者（`ccu-diag-runtime`）以及
+  `/var/lib/ccu/diag/**` 的 preserve 边界。
+- 服务侧等价安装白名单：DIAG 仓库 `ci/verify-install-manifest.py`（EXPECTED 含 seed，
+  FORBIDDEN_PATTERNS 拒绝 dev 夹具/实例状态）；BUILD 侧等价物是
+  `tests/integration/test_release_set_assembly.py::REAL_SERVICE_FILES` 与下面的双向核对。
+
+### 设计 §9.10 制品归属与 staging
+
+- `ccu_build/staging.py`
+  - `StagedFile.mode` + `format_mode()`：每个 staging 文件记录权限位
+    （`oct(S_IMODE)`，如 `0o644`）；symlink 用 `lstat` 记录自身 mode、SHA 为空。
+  - `find_forbidden_payload()`：拒绝 `config/dev/**`、`/var/lib/ccu/**`、
+    `vin.dat` / `ecu_inventory.json` 进入 payload。
+- `ccu_build/artifact.py`：`add_staged_file` 以 `mode or staged.mode` 落库，
+  服务文件因此带 mode；`source` 由 orchestrator 记为
+  `<service>@<revision>:<installed path>`。
+- `ccu_build/orchestrator.py` → `_generate_artifact_manifest`：服务安装文件
+  `owner_service=<service>`、`owner_target=<build.targets>`、
+  `install_component=<component>`、`staging=rootfs`、`source`、`mode`、`sha256`；
+  seed 不得退化为 `unknown` 或 `build`。
+
+### 设计 §9.10 双向核对与验证
+
+- `ccu_build/verify.py`
+  - `stale-assets`（既有）：install-root → manifest 覆盖。
+  - `manifest-install-root-parity`（新增）：manifest → install-root，逐条核对存在性、
+    SHA-256、mode；缺文件、缺 mode 记录或内容/权限漂移均失败。
+  - `forbidden-payload`（新增）：`find_forbidden_payload` 命中即失败。
+- `ccu_build/packaging.py`：`create_package` 在打包前执行同一 forbidden 检查，
+  命中直接 `PackageError`（任何夹具/实例状态都不会进入包）。
+
+### 设计 §9.10 部署与回退
+
+- `manifests/config-deployment.yaml` 精确路径授权
+  `/usr/share/ccu-diag/ecu-inventory.seed.json`：`owner=service`、
+  `release-managed`、`replace`；`build_deploy_plan` 因此把 seed 纳入 replace 计划，
+  与 `ccu_diag`、unit、`diag.yaml` 同事务备份/安装/校验/回退。
+- `/var/lib/ccu/diag/**` 不在 payload，resolver 不匹配任何规则，永不进入部署计划；
+  provisioning 与持久状态 preserve 边界不变。
+
+### CR-005 测试覆盖
+
+| 文件 | 覆盖范围 |
+|---|---|
+| `tests/unit/test_staging.py` | 文件/seed/symlink 的 mode 记录；forbidden payload（干净 payload、`config/dev/**`、`var/lib/ccu/**`、实例状态文件名） |
+| `tests/unit/test_manifest_artifact.py` | seed 条目的 `mode`/`install_component`/serialization |
+| `tests/unit/test_config_deployment.py` | 真实清单 6 条规则；seed 精确规则（owner/category/policy/is_exact） |
+| `tests/integration/test_config_release.py` | seed 进入 replace 计划；`/var/lib/ccu/**` 不进任何计划分区 |
+| `tests/integration/test_release_set_assembly.py` | 真实集合 `REAL_SERVICE_FILES` 含 seed；seed 归属/来源/mode/SHA-256；ccu-diag 五文件精确集合；`manifest-install-root-parity` 通过/缺文件/SHA 漂移/mode 漂移；`forbidden-payload` 拒绝与打包拒绝；真实集合 verify 全绿与部署 replace |
+| `tests/unit/test_manifest.py` | 真实服务固定 revision（长度）与拓扑（既有回归） |
+
+### 需求追踪
+
+| Requirement ID | 实现/测试 |
+|---|---|
+| RELEASE-REQ-001（CR-005 部分） | `manifests/services.yaml`、`staging.py`、`artifact.py`、`verify.py`、`tests/integration/test_release_set_assembly.py::TestRealServiceSetStaging`、`tests/unit/test_staging.py` |
+| RELEASE-REQ-004（CR-005 部分） | `manifests/config-deployment.yaml`、`deploy.py`、`packaging.py`、`verify.py`、`tests/integration/test_config_release.py::TestDeployPlan`、`tests/integration/test_release_set_assembly.py::TestManifestInstallRootParity` |

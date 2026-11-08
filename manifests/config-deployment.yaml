@@ -21,6 +21,15 @@ platforms:
         owner: service
         category: release-managed
         deploy_policy: replace
+      # CCU-BUILD-DSN-CR-005 §4: DIAG deployment seed is a service-owned
+      # read-only release-managed asset. It is installed/replaced together
+      # with ccu_diag, its unit and diag.yaml, and never inlined by BUILD.
+      # /var/lib/ccu/diag/** (instance state) stays preserve and out of the
+      # payload, so it never matches this rule.
+      - path: /usr/share/ccu-diag/ecu-inventory.seed.json
+        owner: service
+        category: release-managed
+        deploy_policy: replace
       # CCU-BUILD-DSN-CR-004 §6: BUILD-owned platform runtime assets.
       # The ReleaseSetAssembler is their only installer; the generic config
       # overlay skips paths it already claimed.

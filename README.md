@@ -3,7 +3,7 @@
 CCU 统一目标平台构建系统。为 CCU framework、DIAG、FOTA、SEC 及后续服务
 提供统一的目标平台构建、依赖管理、制品组织、打包、部署、验证和回退能力。
 
-> **状态**：CCU-BUILD v0.4 草案。由 CCU-BUILD-DSN-CR-001～004 建立。
+> **状态**：CCU-BUILD v0.5 草案。由 CCU-BUILD-DSN-CR-001～005 建立。
 > 目标硬件、OS/BSP、架构、toolchain、sysroot 与正式部署通道尚待实机确认；
 > 未确认值写入受控 Platform Manifest，并在首个可发布构建前关闭。
 > 真实服务（ccu-sec / ccu-diag / ccu-fota）已按固定 commit 登记；受控设备
@@ -115,6 +115,27 @@ python3 -m ccu_build deploy --platform ccu-dev <package.tar.gz>
 >
 > 该豁免在 release profile 会被拒绝（CCU-BUILD-DSN-CR-004 §11）。
 
+## DIAG 部署 seed 与文件双向核对（CCU-BUILD-DSN-CR-005）
+
+`ccu-diag-runtime` 的精确安装集是 **5 个文件**：daemon、unit、`diag.yaml`、
+schema，以及只读部署 seed `usr/share/ccu-diag/ecu-inventory.seed.json`。
+
+- **登记**：`manifests/services.yaml` 的 `ccu-diag.revision` 固定为 DIAG CR-010
+  合入 commit；seed 由服务仓库标准 `install()` 输出，BUILD 不复制、不内联设备值。
+- **归属**：Artifact Manifest 记 `owner_service=ccu-diag`、`owner_target=<targets>`、
+  `install_component=ccu-diag-runtime`、`staging=rootfs`、`mode=0o644`、
+  `source=<service>@<revision>:<path>`、`sha256`；不得记为 `unknown` 或 `build`。
+- **双向核对**：`verify_staging()` 的 `stale-assets`（install-root → manifest）与
+  `manifest-install-root-parity`（manifest → install-root，逐条比对存在性、SHA-256、
+  mode）必须同时通过；缺失或多出 seed 均判定失败。
+- **部署**：`manifests/config-deployment.yaml` 以精确路径授权 seed
+  `owner=service` / `release-managed` / `replace`，与二进制、unit、配置作为同一
+  release-set 备份、安装、校验与回退；`/var/lib/ccu/diag/**`（`vin.dat`、
+  `ecu_inventory.json`）保持 preserve，不进入发布包。
+- **禁止入包**：`config/dev/**` 开发夹具、`/var/lib/ccu/**` 持久/实例状态及
+  `vin.dat`、`ecu_inventory.json` 由 `find_forbidden_payload` 拦截，`verify` 的
+  `forbidden-payload` 检查失败，`Packager` 直接拒绝打包。
+
 ### CI 流水线
 
 ```bash
@@ -135,7 +156,9 @@ python3 -m pytest tests/ -v
 2. Framework 接入：以 CCU framework 验证 library、多 targets、SDK staging（CR-002）
 3. 配置发布治理：平台 overlay、策略清单、schema/秘密校验与一致回退（CR-003）
 4. 真实服务与 release-set 运行资产：固定 revision 登记、聚合 target、
-   平台 vsomeip 资产、制品追溯与部署预检（CR-004，本仓库当前实现）
+   平台 vsomeip 资产、制品追溯与部署预检（CR-004）
+5. DIAG 部署 seed 安装集：五文件精确集合、manifest/install-root 双向核对、
+   制品归属、部署回退与禁止入包检查（CR-005，本仓库当前实现）
 
 ## 前置决策（首个可发布构建前必须关闭）
 
@@ -152,3 +175,5 @@ python3 -m pytest tests/ -v
 - [DSN-CR-001](https://app.notion.com/p/CCU-BUILD-DSN-CR-001-f95b57404f434d51a1e808dbe6b84964)
 - [DSN-CR-004](https://app.notion.com/p/CCU-BUILD-DSN-CR-004-4100ec7a4b928140827dcd1b1f642338)
 - [REQ-CR-004](https://app.notion.com/p/CCU-BUILD-REQ-CR-004-4100ec7a4b9281b8a4f4e8a00c5958dc)
+- [DSN-CR-005](https://app.notion.com/p/CCU-BUILD-DSN-CR-005-4120ec7a4b9281858209f308dfd933ac)
+- [REQ-CR-005](https://app.notion.com/p/CCU-BUILD-REQ-CR-005-4120ec7a4b9281d4a039d86205005e2b)

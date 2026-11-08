@@ -79,6 +79,11 @@ services:
       service_dependencies: []
       target_dependencies:
         - yaml-cpp
+      # 生产 SOME/IP 后端（vsomeip3）：TARGET readiness 已由 vsomeip3 3.4.10
+      # 受控 sysroot 满足；默认 OFF 的 FakeSomeIpBackend 无网络，会导致服务间
+      # SOME/IP 全部不可达（DIAG unavailable），必须显式开启。
+      cmake_cache_variables:
+        CCU_FW_SOMEIP_VSOMEIP: "ON"
       preset: ccu-dev-release
       install_components:
         - name: ccu-framework-sdk
@@ -176,15 +181,20 @@ services:
       required_devices: []
       capabilities: []
 
-  # CCU-DIAG 真实服务接入（CCU-DIAG-DSN-CR-009 §3.2/§6.1）。
+  # CCU-DIAG 真实服务接入（CCU-DIAG-DSN-CR-009 §3.2/§6.1，seed 见 CR-010 §12.1）。
   # 固定 commit；DIAG 依赖 Framework SDK 并表达 DIAG→SEC 运行拓扑。
-  # ccu-diag-runtime 精确安装：usr/bin/ccu_diag、usr/lib/systemd/system/ccu-diag.service、
-  # etc/ccu/conf.d/diag.yaml、usr/share/ccu-diag/schema/diag.schema.yaml。
+  # ccu-diag-runtime 精确安装 5 个文件：usr/bin/ccu_diag、
+  # usr/lib/systemd/system/ccu-diag.service、etc/ccu/conf.d/diag.yaml、
+  # usr/share/ccu-diag/schema/diag.schema.yaml、
+  # usr/share/ccu-diag/ecu-inventory.seed.json（mode 0644）。
+  # seed 是 ccu-diag 拥有的只读 release-managed 部署资产（deploy_policy=replace，
+  # 由 config-deployment.yaml 精确授权），不是 BUILD-owned 或 platform asset；
+  # 设备实例状态 /var/lib/ccu/diag/** 保持 preserve，不进入发布包。
   # SEC 不可用时保持既有业务降级语义（After=/Wants=，不使用 Requires=）。
   ccu-diag:
-    description: "CCU diagnostic gateway daemon (CCU-DIAG-DSN-CR-009)"
+    description: "CCU diagnostic gateway daemon (CCU-DIAG-DSN-CR-009/CR-010)"
     source_dir: ../iov-vehicle-ccu-diag
-    revision: 2984eed91274b3ed44fd0cc0a6ef218d1e1123c4
+    revision: 6ef5f2da6873e8dccd29946866d2ac5e87d1bdf0
     kind: daemon
     build:
       targets:
@@ -236,7 +246,7 @@ services:
   ccu-fota:
     description: "CCU FOTA daemon + orchestrator (CCU-FOTA-DSN-CR-008 §12)"
     source_dir: ../iov-vehicle-ccu-fota
-    revision: 2fa5f98bab3c8899af2f13916f4b84c8e2ffc0e4
+    revision: d0d0f7ba7c1484a2a080553f9e92e9b7cb5d4e3a
     kind: daemon
     build:
       targets:

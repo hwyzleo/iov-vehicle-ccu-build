@@ -1,0 +1,68 @@
+# =============================================================================
+# config/sec.default.yaml - CCU-SEC 安全默认模板 (CCU-SEC-DSN-CR-005 §5.1)
+# =============================================================================
+# 由 CCU-SEC 仓库维护并随源码版本化。安装为 /etc/ccu/conf.d/sec.yaml，
+# 再由 CCU-BUILD 用平台完整文件整文件覆盖（不做运行时深合并）。
+#
+# 约束：
+#   * 唯一顶层根节点 sec:；不得包含顶层 common:（common.log.* 由 BUILD 的
+#     /etc/ccu/common.yaml 提供）。
+#   * 不含 key_files、storage_path、明文秘密、测试密钥、证书、seed、
+#     session key、nonce 或设备唯一值。
+#   * 仅含结构、安全默认值与非平台值；实际 SE/HSM adapter、设备节点与平台
+#     网络参数由 BUILD 平台完整文件提供。
+#   * Service/Instance/Method ID 与端口以整车 SOME/IP Service Registry 为
+#     SSOT，本文件不重新分配。
+#   * se_hsm.type: unconfigured 是安全安装占位，不是软件 fallback：
+#     未平台化时生产 daemon 在 ready/offer 前失败（fail-closed）。
+# =============================================================================
+sec:
+  # 服务级日志覆盖；common.log.* 不在本文件内。
+  log:
+    level: INFO
+    modules:
+      facade: INFO
+      seed_key: INFO
+      ota_session: INFO
+      root_store: INFO
+      device_key: INFO
+      se_adapter: INFO
+
+  # 安全参数（原 sec_config.yaml 的非秘密字段）
+  security:
+    default_security_level: 1
+    seed_expiration_ms: 30000
+    max_seed_pool_size: 100
+
+  # SOME/IP provider（原 someip_config.yaml 的非秘密字段）
+  someip:
+    application_name: ccu-sec
+    service_id: 0x1140
+    instance_id: 0x0001
+    methods:
+      # Method ID 为 service-scoped；一经分配不复用、不重编号。
+      get_seed:
+        method_id: 0x0001
+      verify_key:
+        method_id: 0x0002
+      derive_ota_session:
+        method_id: 0x0003
+      derive_by_uid:
+        method_id: 0x0004
+      wrap_by_uid:
+        method_id: 0x0005
+    endpoint:
+      # 端点由 Service Registry 分配；单播地址属平台网络参数，由 BUILD 提供。
+      port: 51140
+      protocol: TCP
+    service_discovery:
+      enabled: true
+      mode: static
+
+  # SE/HSM adapter 选择（原 se_hsm_config.yaml 的 type）。
+  # 平台决策（ccu-dev 开发平台）：使用软件 HSM adapter（NON_PRODUCTION，
+  # CCU_SEC_ENABLE_SOFTWARE_HSM=ON 编译进 daemon）。生产平台必须替换为已批准
+  # 的硬件 SE/HSM adapter，并将本文件移出平台 overlay。
+  se_hsm:
+    type: software
+    adapter: {}

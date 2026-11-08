@@ -1,0 +1,242 @@
+# =============================================================================
+# configs/ccu-dev/rootfs/etc/ccu/conf.d/diag.yaml
+# 平台完整文件覆盖（CCU-BUILD-DSN-CR-003 §9.2/§9.4：整文件覆盖，不做 YAML 深合并）。
+#
+# 本文件是 ORIN 小车整车项目的 diag 运行配置：
+#   * registry.ecus = 本项目上报/读回的 ECU 集合（TBOX/CCU/DCU_COCKPIT/DCU_ADAS），
+#     TBOX/CCU/DCU_* 的 logicalAddress/transport/dids 目前为占位值，
+#     切回 mode=hardware 前必须替换为整车诊断规范真实值。
+#   * inventory.mode = seed：清单事实来自部署 seed（本平台发布物提供）。
+#
+# ⚠️ 维护约定：BUILD 的平台覆盖优先于服务默认模板
+#   (../iov-vehicle-ccu-diag/config/diag.default.yaml)，两处必须同步；
+#   服务新增字段时本文件需跟随，否则字段会被覆盖丢失。
+# =============================================================================
+# =============================================================================
+# config/diag.default.yaml - CCU-DIAG 安全默认模板 (CCU-DIAG-DSN-CR-009 §5)
+# =============================================================================
+# 由 CCU-DIAG 仓库维护并随源码版本化。安装为 /etc/ccu/conf.d/diag.yaml，
+# 再由 CCU-BUILD 用平台完整文件整文件覆盖（不做运行时深合并）。
+#
+# 约束：
+#   * 唯一顶层根节点 diag:；不得包含顶层 common:（common.log.* 由 BUILD 的
+#     /etc/ccu/common.yaml 提供）。
+#   * 不含真实 VIN、设备唯一值、密钥、证书或 provisioning 内容。
+#   * 仅含结构、安全默认值与非平台值；CAN 接口、DoIP 地址/IP 与平台网络
+#     参数由 BUILD 平台完整文件提供（缺省时运行期回落 constants 默认值）。
+#   * Service/Instance/Method/Event ID 以整车 SOME/IP Service Registry 为 SSOT，
+#     配置迁移不重新分配。
+# =============================================================================
+diag:
+  # 服务级日志覆盖；common.log.* 不在本文件内。
+  log:
+    level: INFO
+    modules:
+      facade: INFO
+      orchestrator: INFO
+      tester: INFO
+      router: WARN
+      transport: WARN
+      did_registry: INFO
+      vin_store: INFO
+      inventory_store: INFO
+      fota_registrar: INFO
+      sec_client: INFO
+
+  # UDS / 诊断时序与重试配置（原 diag_config.yaml）
+  timing:
+    p2_server_max_ms: 50
+    p2_star_server_max_ms: 5000
+    s3_session_timeout_ms: 5000
+    tester_present_interval_ms: 2000
+    request_timeout_ms: 2000
+    retry_interval_ms: 100
+  retry:
+    max_count: 2
+
+  # CAN/DoIP 非秘密参数。平台 CAN 接口、DoIP IP 地址由 BUILD 平台完整文件提供。
+  transport:
+    can:
+      baudrate: 500000
+    doip:
+      port: 13400
+
+  # 原 did_registry.yaml 的 registryVersion / baselineDids / ecus。
+  registry:
+    registryVersion: "2026.11.1"
+    baselineDids: [0xF195, 0xF188, 0xF187, 0xF193]
+    ecus:
+      - ecuId: "BMS"
+        logicalAddress: 0x1A
+        transport: "DoCAN"
+        readMethod: "UDS_0x22"
+        securityRequired: false
+        dids:
+          - did: 0xF195
+            field: "swVersion"
+            encoding: "ASCII"
+            length: 16
+          - did: 0xF187
+            field: "partNumber"
+            encoding: "ASCII"
+            length: 11
+          - did: 0xA001
+            field: "calibrationId"
+            encoding: "HEX"
+            length: 4
+          - did: 0xF18C
+            field: "serialNumber"
+            encoding: "ASCII"
+            length: 20
+      - ecuId: "IDCM"
+        logicalAddress: 0x20
+        transport: "DoIP"
+        readMethod: "SOMEIP_getVersion"
+        someipService: "0x1234"
+        fields: ["swVersion", "hwVersion", "serialNumber"]
+      - ecuId: "VCU"
+        logicalAddress: 0x21
+        transport: "DoCAN"
+        readMethod: "UDS_0x22"
+        securityRequired: false
+        dids:
+          - did: 0xF195
+            field: "swVersion"
+            encoding: "ASCII"
+            length: 16
+          - did: 0xF188
+            field: "ecuSoftwareNumber"
+            encoding: "ASCII"
+            length: 11
+          - did: 0xF193
+            field: "hwVersion"
+            encoding: "ASCII"
+            length: 8
+          - did: 0xF18C
+            field: "serialNumber"
+            encoding: "ASCII"
+            length: 20
+      # ---------------------------------------------------------------------
+      # 本项目（ORIN 小车）需要上报的 ECU。清单事实由 platform seed 提供
+      # （inventory.mode=seed），下列读取规则不参与真实报文读取，只用于
+      # seed 校验（ecuId 必须在此登记）与上报 source 字段。
+      # TODO(待整车诊断规范确认)：logicalAddress / transport / readMethod /
+      # dids 目前是占位值，切回 mode=hardware 前必须替换为真实值。
+      # ---------------------------------------------------------------------
+      - ecuId: "TBOX"
+        logicalAddress: 0x10
+        transport: "DoCAN"
+        readMethod: "UDS_0x22"
+        securityRequired: false
+        dids:
+          - did: 0xF195
+            field: "swVersion"
+            encoding: "ASCII"
+            length: 16
+          - did: 0xF18C
+            field: "serialNumber"
+            encoding: "ASCII"
+            length: 20
+      - ecuId: "CCU"
+        logicalAddress: 0x40
+        transport: "DoCAN"
+        readMethod: "UDS_0x22"
+        securityRequired: false
+        dids:
+          - did: 0xF195
+            field: "swVersion"
+            encoding: "ASCII"
+            length: 16
+          - did: 0xF18C
+            field: "serialNumber"
+            encoding: "ASCII"
+            length: 20
+      - ecuId: "DCU_COCKPIT"
+        logicalAddress: 0x50
+        transport: "DoCAN"
+        readMethod: "UDS_0x22"
+        securityRequired: false
+        dids:
+          - did: 0xF195
+            field: "swVersion"
+            encoding: "ASCII"
+            length: 16
+          - did: 0xF18C
+            field: "serialNumber"
+            encoding: "ASCII"
+            length: 20
+      - ecuId: "DCU_ADAS"
+        logicalAddress: 0x60
+        transport: "DoCAN"
+        readMethod: "UDS_0x22"
+        securityRequired: false
+        dids:
+          - did: 0xF195
+            field: "swVersion"
+            encoding: "ASCII"
+            length: 16
+          - did: 0xF18C
+            field: "serialNumber"
+            encoding: "ASCII"
+            length: 20
+
+  # 本地 ECU 清单事实（CCU-DIAG-DSN-CR-010）。
+  # mode：hardware（真实逐 ECU 读回，生产目标态）| seed（部署声明表，过渡兜底）。
+  #   * 二者互斥，不支持 auto/混源；切换需重启生效。
+  #   * seed 内容由平台发布物提供（本仓库只提供结构模板，不含真实设备值）。
+  #   * state_path 必须位于 /var/lib/ccu/diag/ 下（实例状态，部署/回退 preserve）。
+  #   * 无真实 ECU 的联调/演示环境由平台文件设置 mode: seed。
+  inventory:
+    # 本项目（ORIN 小车）当前使用部署声明表，不用真实逐 ECU 读回。
+    # 取值 hardware（生产目标态）| seed（部署声明表）。切换需重启生效。
+    mode: seed
+    seed_path: /usr/share/ccu-diag/ecu-inventory.seed.json
+    state_path: /var/lib/ccu/diag/ecu_inventory.json
+    idempotency_window: 64
+
+  # 本进程唯一的 vsomeip application（CCU-DIAG-DSN-CR-007）。
+  # 平台网络 IP/端口由 BUILD 平台完整文件提供；缺省时运行期回落
+  # 127.0.0.1:51110（constants::DEFAULT_SOMEIP_*）。
+  someip:
+    application_name: ccu-diag
+    service:
+      service_id: 0x1110
+      instance_id: 0x0001
+      major_version: 1
+      minor_version: 0
+    methods:
+      read_vin:
+        method_id: 0x0001
+      collect_vehicle_inventory:
+        method_id: 0x0002
+      get_ecu_version:
+        method_id: 0x0003
+      get_registry_version:
+        method_id: 0x0004
+      record_installed_versions:
+        method_id: 0x0005
+    events:
+      inventory_result:
+        event_id: 0x8001
+    timing:
+      request_timeout_ms: 2000
+    sd:
+      enabled: true
+      mode: "static"
+
+  # 原 sec_config.yaml 的 CCU-SEC 对端配置；复用同一个 ccu-diag application，
+  # 不得创建第二个 vsomeip application。CCU-SEC 网络 IP/端口由平台文件提供，
+  # 缺省时运行期回落 127.0.0.1:51140。
+  sec_client:
+    someip:
+      application_name: ccu-diag
+      service:
+        service_id: 0x1140
+        instance_id: 0x0001
+        major_version: 1
+        minor_version: 0
+      timing:
+        request_timeout_ms: 2000
+      sd:
+        enabled: true
+        mode: "static"

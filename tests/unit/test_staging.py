@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from ccu_build.staging import StagingDir, sha256_file, StagedFile
+from ccu_build.staging import (
+    StagedFile,
+    StagingDir,
+    find_forbidden_payload,
+    format_mode,
+    sha256_file,
+)
 
 
 class TestStagingDir:
@@ -107,6 +113,83 @@ class TestScanFiles:
         files = staging.scan_files()
         assert len(files) == 1
         assert files[0].rel_path == "sdk/lib-a/usr/include/test.h"
+
+
+class TestModeRecording:
+    """CCU-BUILD-DSN-CR-005 §2: mode is recorded for every staged file."""
+
+    def test_scan_records_file_mode(self, tmp_path: Path):
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
+        staging.prepare()
+        binary = staging.install_root / "usr/bin/ccu_diag"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("bin")
+        binary.chmod(0o755)
+
+        files = staging.scan_files()
+        assert len(files) == 1
+        assert files[0].mode == "0o755"
+        assert files[0].mode == format_mode(binary, follow_symlinks=True)
+
+    def test_scan_records_seed_mode(self, tmp_path: Path):
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
+        staging.prepare()
+        seed = staging.install_root / "usr/share/ccu-diag/ecu-inventory.seed.json"
+        seed.parent.mkdir(parents=True)
+        seed.write_text("{}\n")
+        seed.chmod(0o644)
+
+        files = staging.scan_files()
+        assert [f.mode for f in files] == ["0o644"]
+
+    def test_scan_records_symlink_mode(self, tmp_path: Path):
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
+        staging.prepare()
+        target = staging.install_root / "usr/lib/libfoo.so.1.0"
+        target.parent.mkdir(parents=True)
+        target.write_text("lib")
+        link = staging.install_root / "usr/lib/libfoo.so.1"
+        link.symlink_to(target.name)
+
+        files = {f.rel_path: f for f in staging.scan_files()}
+        staged_link = files["rootfs/usr/lib/libfoo.so.1"]
+        assert staged_link.sha256 == ""
+        assert staged_link.mode == format_mode(link)
+
+
+class TestForbiddenPayload:
+    """CCU-BUILD-REQ-CR-005: dev fixtures / instance state never ship."""
+
+    def test_clean_payload(self, tmp_path: Path):
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
+        staging.prepare()
+        seed = staging.install_root / "usr/share/ccu-diag/ecu-inventory.seed.json"
+        seed.parent.mkdir(parents=True)
+        seed.write_text("{}\n")
+        assert find_forbidden_payload(staging.install_root) == []
+
+    def test_dev_fixture_rejected(self, tmp_path: Path):
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
+        staging.prepare()
+        fixture = staging.install_root / "usr/share/ccu-diag/config/dev/diag.yaml"
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text("dev: true\n")
+        assert find_forbidden_payload(staging.install_root) == [
+            "usr/share/ccu-diag/config/dev/diag.yaml"
+        ]
+
+    def test_instance_state_rejected(self, tmp_path: Path):
+        staging = StagingDir(tmp_path, platform="ccu-dev", profile="release")
+        staging.prepare()
+        vin = staging.install_root / "var/lib/ccu/diag/vin.dat"
+        vin.parent.mkdir(parents=True)
+        vin.write_text("VIN")
+        inventory = staging.install_root / "usr/share/ccu-diag/ecu_inventory.json"
+        inventory.parent.mkdir(parents=True)
+        inventory.write_text("{}\n")
+        hits = find_forbidden_payload(staging.install_root)
+        assert "var/lib/ccu/diag/vin.dat" in hits
+        assert "usr/share/ccu-diag/ecu_inventory.json" in hits
 
 
 class TestSnapshotPaths:

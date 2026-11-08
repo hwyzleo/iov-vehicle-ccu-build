@@ -138,6 +138,35 @@ class TestArtifactManifest:
         assert len(manifest.entries) == 1
         assert manifest.entries[0].file_type == "data"
 
+    def test_add_staged_file_records_mode(self, tmp_path: Path):
+        """CCU-BUILD-DSN-CR-005 §3: service files carry mode + SHA-256."""
+        manifest = _make_manifest()
+        seed = tmp_path / "ecu-inventory.seed.json"
+        seed.write_text('{"schemaVersion": 1}\n')
+        seed.chmod(0o644)
+        staged = StagedFile(
+            rel_path="rootfs/usr/share/ccu-diag/ecu-inventory.seed.json",
+            full_path=seed,
+            size=seed.stat().st_size,
+            sha256="deadbeef",
+            mode="0o644",
+        )
+        manifest.add_staged_file(
+            staged,
+            owner_service="ccu-diag",
+            owner_target="ccu_diag",
+            version="0.1.0",
+            git_commit="abc",
+            install_component="ccu-diag-runtime",
+            staging="rootfs",
+        )
+        entry = manifest.entries[0]
+        assert entry.mode == "0o644"
+        assert entry.sha256 == "deadbeef"
+        serialized = manifest.to_dict()["artifacts"][0]
+        assert serialized["mode"] == "0o644"
+        assert serialized["install_component"] == "ccu-diag-runtime"
+
     def test_platform_manifest_summary(self):
         manifest = _make_manifest()
         d = manifest.to_dict()
