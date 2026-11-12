@@ -245,12 +245,14 @@ services:
   # 平台相关的 vsomeip drop-in/共享 JSON 属于 BUILD 拥有的平台资产
   # （CCU-BUILD-DSN-CR-004 §5），不在服务 install 内。
   # FOTA 表达 FOTA→DIAG 运行拓扑（After=/Wants=，不使用 Requires=）。
-  # revision 追到 CR-012/CR-013：清单身份决策器（FULL/DIGEST）与安装结果登记
-  # （record_installed_versions）合入（945d4c2 / be7191e）。
+  # revision 追到 CR-012/CR-013/CR-015：清单身份决策器（FULL/DIGEST）、安装结果
+  # 登记（record_installed_versions）、DIAG payload v2 独立软件件号、
+  # NON_PRODUCTION Mock 联调机制合入（945d4c2 / be7191e / 9d5ad0f / 302b56f），
+  # 并追到 b556f91（TBOX 响应帧解析与可定位失败日志）。
   ccu-fota:
     description: "CCU FOTA daemon + orchestrator (CCU-FOTA-DSN-CR-008 §12)"
     source_dir: ../iov-vehicle-ccu-fota
-    revision: be7191e421ad00d47e07b8c1a33545b75f490d12
+    revision: b556f91a4abc37f5c387f4f458a7418e1125ef5b
     kind: daemon
     build:
       targets:

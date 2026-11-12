@@ -3,9 +3,15 @@
 # 平台完整文件覆盖（CCU-BUILD-DSN-CR-003 §9.2/§9.4：整文件覆盖，不做 YAML 深合并）。
 #
 # 本文件是 ORIN 小车整车项目的 diag 运行配置：
-#   * registry.ecus = 本项目上报/读回的 ECU 集合（TBOX/CCU/DCU_COCKPIT/DCU_ADAS），
-#     TBOX/CCU/DCU_* 的 logicalAddress/transport/dids 目前为占位值，
+#   * registry.ecus = 本项目上报/读回的 ECU 集合
+#     （TBOX_5G/CCU_GEN1/DCU_COCKPIT_SA8295P/DCU_ADAS_GEN1），
+#     logicalAddress/transport/dids 目前为占位值，
 #     切回 mode=hardware 前必须替换为整车诊断规范真实值。
+#   * ecuId 必须使用 MDM/VMD 车载节点代码（vehicleNodeCode）口径，不能使用
+#     模块简称（TBOX/CCU/DCU_*）：车端上报的 ecuId 会原样进入云端 Canonical
+#     Inventory，OTA 用它与 VMD 零件投影 deviceCode、活动升级对象
+#     vehicleNodeCode 精确比对，简称会导致设备清单零件关联 NOT_FOUND、
+#     OTA 任务匹配永远不成立。seed（/usr/share/ccu-diag/）必须同步。
 #   * inventory.mode = seed：清单事实来自部署 seed（本平台发布物提供）。
 #
 # ⚠️ 维护约定：BUILD 的平台覆盖优先于服务默认模板
@@ -124,8 +130,11 @@ diag:
       # seed 校验（ecuId 必须在此登记）与上报 source 字段。
       # TODO(待整车诊断规范确认)：logicalAddress / transport / readMethod /
       # dids 目前是占位值，切回 mode=hardware 前必须替换为真实值。
+      # 映射（partNumber 一致，来自 VMD 零件绑定）：
+      #   TBOX_5G <- TBOX (00000001AA) | DCU_COCKPIT_SA8295P <- DCU_COCKPIT (00000004AA)
+      #   CCU_GEN1 <- CCU (00000007AA)  | DCU_ADAS_GEN1 <- DCU_ADAS (00000010AA)
       # ---------------------------------------------------------------------
-      - ecuId: "TBOX"
+      - ecuId: "TBOX_5G"
         logicalAddress: 0x10
         transport: "DoCAN"
         readMethod: "UDS_0x22"
@@ -143,7 +152,7 @@ diag:
             field: "serialNumber"
             encoding: "ASCII"
             length: 20
-      - ecuId: "CCU"
+      - ecuId: "CCU_GEN1"
         logicalAddress: 0x40
         transport: "DoCAN"
         readMethod: "UDS_0x22"
@@ -161,7 +170,7 @@ diag:
             field: "serialNumber"
             encoding: "ASCII"
             length: 20
-      - ecuId: "DCU_COCKPIT"
+      - ecuId: "DCU_COCKPIT_SA8295P"
         logicalAddress: 0x50
         transport: "DoCAN"
         readMethod: "UDS_0x22"
@@ -179,7 +188,7 @@ diag:
             field: "serialNumber"
             encoding: "ASCII"
             length: 20
-      - ecuId: "DCU_ADAS"
+      - ecuId: "DCU_ADAS_GEN1"
         logicalAddress: 0x60
         transport: "DoCAN"
         readMethod: "UDS_0x22"
