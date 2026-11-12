@@ -1,0 +1,18 @@
+{
+  "scenario": "orin-ccu-fota-happy-path",
+  "clock": "realtime",
+  "inventory": {
+    "mode": "FULL",
+    "baseline": "XREHC3LAAA0000001-v0.1",
+    "fota_master_version": "fota-v1"
+  },
+  "packages": [],
+  "executor": {
+    "stages": [
+      { "stage": "INSTALL", "progress": [10, 50, 100], "result": "SUCCEEDED" },
+      { "stage": "REBOOT", "progress": [100], "result": "SUCCEEDED" },
+      { "stage": "POST_CHECK", "progress": [100], "result": "SUCCEEDED" }
+    ]
+  },
+  "faults": []
+}

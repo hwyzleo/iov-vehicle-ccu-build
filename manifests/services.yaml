@@ -248,11 +248,15 @@ services:
   # revision 追到 CR-012/CR-013/CR-015：清单身份决策器（FULL/DIGEST）、安装结果
   # 登记（record_installed_versions）、DIAG payload v2 独立软件件号、
   # NON_PRODUCTION Mock 联调机制合入（945d4c2 / be7191e / 9d5ad0f / 302b56f），
-  # 并追到 b556f91（TBOX 响应帧解析与可定位失败日志）。
+  # 并追到 b556f91（TBOX 响应帧解析与可定位失败日志）；
+  # 5cb7b51：NON_PRODUCTION Mock 构建支持显式 -DCCU_FOTA_MOCK_INSTALL=ON 安装（联调）。
+  # d65855f：空 package_list / download_allowed=false 时 fail-closed，
+  # WaitingWindow 与安装登记不可用自救（回退检测并保持清单上报），
+  # step 失败落日志，登记 method_id 由 0 改为 5（DIAG 0x0005）。
   ccu-fota:
     description: "CCU FOTA daemon + orchestrator (CCU-FOTA-DSN-CR-008 §12)"
     source_dir: ../iov-vehicle-ccu-fota
-    revision: b556f91a4abc37f5c387f4f458a7418e1125ef5b
+    revision: 5cb7b5118f141296eedfd06b438c5f2d75b3db9a
     kind: daemon
     build:
       targets:
@@ -262,6 +266,14 @@ services:
         - ccu-diag
       target_dependencies:
         - yaml-cpp
+      # ccu-dev 联调（CCU-FOTA-DSN-CR-015 §D1）：NON_PRODUCTION Mock 构建。
+      # 下载/校验/刷写以 Mock 成功代理（MockPackageDownloader/MockInstallExecutor/
+      # MockVehicleConditionProvider），但 SOME/IP 与车云链路、清单上报、各阶段
+      # 上报（StageResultReport/ExecutionEvent/FinalResultReport）均为真实实现。
+      # 量产平台必须移除这两项（保持 PRODUCTION 构建）。
+      cmake_cache_variables:
+        FOTA_ENABLE_TEST_DOUBLES: "ON"
+        CCU_FOTA_MOCK_INSTALL: "ON"
       preset: ccu-dev-release
       install_components:
         - name: ccu-fota-runtime

@@ -1,0 +1,72 @@
+# =============================================================================
+# 平台覆盖：Orin 联调（NON_PRODUCTION Mock）——CCU-BUILD-DSN-CR-003 §9.2/§9.4
+# -----------------------------------------------------------------------------
+# 本文件是 BUILD 平台完整覆盖（整文件替换，不做 YAML 深合并），内容来自
+# CCU-FOTA config/fota.default.yaml，仅把 fota.mock 段打开：
+#   * mock.enabled=true      —— 下载/校验/刷写以 Mock 成功代理，跑通 FOTA 全流程
+#   * scenario_path=...      —— 场景脚本由 BUILD 作为平台资产交付（全阶段成功、无故障）
+#   * virtual_clock=false    —— 真实 SOME/IP + 车云链路必须 false（否则启动 fail-closed）
+# 仅用于 ccu-dev 联调/演示构建；量产平台覆盖必须保持 mock.enabled=false。
+# =============================================================================
+fota:
+  inventory:
+    change_detection_enabled: true    # 是否启用变更检测
+    min_report_interval_ms: 300000    # 自动上报最小间隔（节流），非负
+    max_pending_requests: 32          # 等待队列上限 1..1024（同一时刻仍最多一轮采集）
+    dedupe_max_entries: 100           # 去重窗口条目上限 1..1024 (CCU-FOTA-DSN-CR-005)
+    dedupe_ttl_ms: 3600000            # 去重窗口保留期（ms），0 表示无 TTL
+    identity_retry_backoff_ms: 5000   # 同一清单身份的失败重试退避 0..600000 (CCU-FOTA-DSN-CR-012)
+    digest_max_consecutive_failures: 3 # 连续 DIGEST 失配上限 1..10 (CR-012)
+  diag:
+    collect_timeout_ms: 30000         # DIAG 采集超时，正整数
+    retry_max_attempts: 2             # 采集重试次数 0..10
+    retry_backoff_ms: 1000            # 采集重试退避，非负
+    registration:                     # 安装结果登记（CCU-FOTA-DSN-CR-013）
+      enabled: true                   # 能力开关；false 只阻止新安装，不是跳过登记的开关
+      method_id: 5                    # Registry 分配的 METHOD_RECORD_INSTALLED_VERSIONS
+                                      # = 0x0005（CCU-DIAG constants.h 已实现并 offer）；
+                                      # 0 = 尚未分配 -> 能力关闭（不得猜测 ID，
+                                      # 未分配时不启用真实安装，读清单/上报不受影响）
+      interface_major: 1              # CCU-DIAG 接口 major（不一致 fail-closed）
+      timeout_ms: 30000               # 单次登记调用超时
+  someip:                            # CCU-FOTA-DSN-CR-007 SOME/IP 框架接入（CR-010/011 契约 B）
+    transport:                       # 契约 B SOME/IP 通用传输有界配置 (CR-010/011)
+      exchange_timeout_ms: 10000      # 单次 exchange/publish 本地超时上限
+      max_envelope_bytes: 262144      # 序列化 Envelope 大小上限
+      max_payload_bytes: 262144       # payload bytes 上限
+      max_in_flight: 64               # 有界 in-flight correlation 表容量
+      downlink_queue_capacity: 256    # 下行有界队列容量
+      downlink_workers: 1             # 下行独立 executor 线程数
+      in_flight_ttl_ms: 30000         # correlation 条目清理 TTL
+      availability_wait_ms: 5000      # start() 有界等待 TBOX 可用时间
+    generic_transport:               # TBOX 通用消息服务寻址（Registry/IDL/运行配置）
+      # Service/Instance 0x6101/0x0001/TCP 56101 已由 Registry 分配（CR-002）。
+      # generic Method/Event/Eventgroup ID 来自整车 SOME/IP Service Registry SSOT
+      # （VEH-SOMEIP）分配组：Method 0x0002 / Event 0x8002 / Eventgroup 0x0002，
+      # interface major 1。禁止在代码中猜测；全 0 = Registry 尚未分配
+      # （契约 B fail-closed 不启用）。
+      method_id: 2            # 0x0002 METHOD_EXCHANGE_VEHICLE_MESSAGE（上行 exchange/publish）
+      event_id: 32770         # 0x8002 EVENT_VEHICLE_MESSAGE（下行 RESPONSE/EVENT）
+      eventgroup_id: 2        # 0x0002 EVENTGROUP_VEHICLE_MESSAGE
+      interface_major: 1      # TBOX-SOMEIP 接口 major 版本
+  cloud:                             # CCU-FOTA-DSN-CR-009 车云 FOTA 编排（CR-011 由 ota 收敛）
+    enabled: true                     # 量产部署需先由 Registry 分配 generic transport ID
+                                      # （fota.someip.generic_transport.*），否则契约 B fail-closed
+    protocol_version: fota-v1
+    task_check_interval_ms: 60000     # 任务检测周期，正整数
+    reconcile_on_start: true          # 启动时对账恢复
+    event_outbox_max: 4096            # 事件 Outbox 容量上限 1..1048576
+    event_batch_max: 64               # 单批事件上报上限 1..65535
+    control_ack_timeout_ms: 5000      # 控制回执超时，正整数
+    cloud_call_timeout_ms: 10000      # 车云调用默认超时，正整数
+    # 时钟门禁：上行 Envelope 的 timestamp_ms/expire_at_ms 由 CLOCK_REALTIME 推导。
+    # CCU 上电后 RTC 未与可信时间源同步时 expire_at_ms 落在过去，云侧网关按契约判定
+    # MESSAGE_EXPIRED 并丢入上行 DLQ（消息永久丢失且无业务回执），故同步前不上行。
+    require_clock_sync: true          # false 仅用于无授时服务的实验台
+    clock_sync_poll_interval_ms: 1000 # 等待同步期间的轮询间隔 100..60000
+    clock_min_valid_epoch_ms: 1735689600000  # 2025-01-01T00:00:00Z 合理性下限
+  mock:                              # CCU-FOTA-DSN-CR-009/015 NON_PRODUCTION 联调
+    enabled: true                     # ccu-dev 联调：下载/校验/刷写以 Mock 成功代理
+    scenario_path: /usr/share/ccu-fota/mock/scenario.json  # BUILD 平台资产（全阶段成功）
+    virtual_clock: false              # 真实链路必须 false；true 仅隔离测试
+  log: {}                             # 服务级日志覆盖，字段由 ccu-framework-log schema 片段约束

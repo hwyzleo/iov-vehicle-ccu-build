@@ -37,6 +37,12 @@ platforms:
         owner: build
         category: release-managed
         deploy_policy: replace
+      # ccu-dev 联调：CCU-FOTA NON_PRODUCTION Mock 场景脚本（BUILD-owned 平台资产，
+      # 与 fota.yaml 的 fota.mock.scenario_path 精确对应；全阶段成功、无故障）。
+      - path: /usr/share/ccu-fota/mock/scenario.json
+        owner: build
+        category: release-managed
+        deploy_policy: replace
       - path: /etc/ccu/someip/vsomeip.json
         owner: build
         category: release-managed
